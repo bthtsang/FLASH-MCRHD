@@ -127,6 +127,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_abs_threshold", pt_abs_threshold)
   call RuntimeParameters_get ("pt_num_tmcps_tstep", pt_num_tmcps_tstep)
 
+  ! Face Emission
   call RuntimeParameters_get ("pt_FaceEmission", pt_FaceEmission)
   call RuntimeParameters_get ("pt_is_FacePlanck", pt_is_FacePlanck)
   call RuntimeParameters_get ("pt_FaceEmissionSide", pt_FaceEmissionSide)
@@ -137,6 +138,11 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_iso_face_vel", pt_is_iso_face_vel)
   call RuntimeParameters_get ("pt_is_radial_face_vel", pt_is_radial_face_vel)
   call RuntimeParameters_get ("pt_num_fmcps_tstep", pt_num_fmcps_tstep)
+
+  ! Point Emission
+  call RuntimeParameters_get ("pt_PointEmission", pt_PointEmission)
+  call RuntimeParameters_get ("pt_PointLuminosity", pt_PointLuminosity)
+  call RuntimeParameters_get ("pt_PointSrcPosOffset", pt_PointSrcPosOffset)
 
   call RuntimeParameters_get ("pt_energy_min_eV", pt_energy_min_eV)
   call RuntimeParameters_get ("pt_energy_max_eV", pt_energy_max_eV)
