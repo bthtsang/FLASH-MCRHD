@@ -1,0 +1,169 @@
+
+### Default to the standard non-ionizing radiation module
+DEFAULT NonIonizingRad
+EXCLUSIVE NonIonizingRad IonizingRad
+
+
+REQUIRES ./MonteCarlo  # subroutines for MCP transport
+REQUIRES Particles/ParticlesMain
+REQUIRES IO/IOParticles/hdf5/serial
+
+
+### Define the radiation particle class
+PARTICLETYPE photon INITMETHOD CUSTOM MAPMETHOD WEIGHTED ADVMETHOD CUSTOM
+### Generic attributes for MCPs
+PARTICLEPROP iscp     REAL
+PARTICLEPROP ener     REAL
+PARTICLEPROP trem     REAL
+PARTICLEPROP isab     REAL
+PARTICLEPROP isnw     REAL
+PARTICLEPROP fate     REAL
+PARTICLEPROP npin     REAL
+PARTICLEPROP nump     REAL
+PARTICLEPROP num0     REAL
+
+### Grid Variables for MCPs
+VARIABLE FLEC TYPE: GENERIC
+VARIABLE ABSE TYPE: PER_MASS    # Energy absorbed to gas 
+VARIABLE EMIE TYPE: PER_MASS    # Thermal energy emitted as radiation
+VARIABLE ABMX TYPE: PER_MASS
+VARIABLE ABMY TYPE: PER_MASS
+VARIABLE ABMZ TYPE: PER_MASS
+VARIABLE SCMX TYPE: PER_MASS
+VARIABLE SCMY TYPE: PER_MASS
+VARIABLE SCMZ TYPE: PER_MASS
+VARIABLE URAD TYPE: PER_MASS
+
+
+### Runtime parameters for **both** ionizing and non-ionizing radiation
+D pt_is_eff_scattering   Whether or not to use fleck factor
+PARAMETER pt_is_eff_scattering    BOOLEAN TRUE
+
+D pt_maxnewnum       Maximum number of new MCPs
+PARAMETER pt_maxnewnum  INTEGER    10000
+
+D pt_es_alpha        alpha for the IMC fleck factor
+PARAMETER pt_es_alpha    REAL 1.0
+
+D pt_smlpush         small value to guarantee MCPs get through boundaries
+PARAMETER pt_smlpush         REAL 1.0e-10
+
+D pt_ThermalEmission       Whether to turn on thermal emission
+PARAMETER pt_ThermalEmission BOOLEAN FALSE
+
+D pt_is_grey         Whether to use grey opacity for thermal rad.
+PARAMETER pt_is_grey BOOLEAN TRUE
+
+D pt_grey_abs_opac        Constant gas absorption opacity for thermal rad.
+PARAMETER pt_grey_abs_opac    REAL 1.0
+
+D pt_grey_sca_opac        Constant gas scattering opacity for thermal rad.
+PARAMETER pt_grey_sca_opac    REAL 0.0
+
+D pt_grey_eps            Constant monochromatic photon energy
+PARAMETER pt_grey_eps        REAL 1.0e-10
+
+D pt_dens_threshold      Threshold gas density for absorption/emission
+PARAMETER pt_dens_threshold     REAL  1.0e-10
+
+D pt_abs_threshold       Threshold weight for MCP to be considered absorbed
+PARAMETER pt_abs_threshold         REAL  1.0e-8
+
+D pt_num_tmcps_tstep      Number of thermal MCPs per cell per timestep
+PARAMETER pt_num_tmcps_tstep     INTEGER 2
+
+D pt_FaceEmission           Whether or not turning on face emission
+PARAMETER pt_FaceEmission        BOOLEAN FALSE
+
+D pt_is_FacePlanck          Whether face emission is from a blackbody
+PARAMETER pt_is_FacePlanck        BOOLEAN TRUE
+
+D pt_FaceEmissionSide       inner or outer boundary for face emission
+PARAMETER pt_FaceEmissionSide    INTEGER 1
+
+D pt_FaceEmissionAxis       Dimension for face emission
+PARAMETER pt_FaceEmissionAxis    INTEGER 1
+
+D pt_FacePlanckTemp       Blackbody temperature for face emission
+PARAMETER pt_FacePlanckTemp    REAL   5700.0
+
+D pt_constFaceFlux        Constant flux value for face emission
+PARAMETER pt_constFaceFlux    REAL   1.0
+
+D pt_is_therm_face_vel    Whether to use planck function directions
+PARAMETER pt_is_therm_face_vel   BOOLEAN FALSE
+
+D pt_is_iso_face_vel    Whether to sample velocity vectors isotropically
+PARAMETER pt_is_iso_face_vel   BOOLEAN FALSE
+
+D pt_is_radial_face_vel    Whether to point velocities radially out
+PARAMETER pt_is_radial_face_vel   BOOLEAN  TRUE
+
+D pt_num_fmcps_tstep      Number of face MCP per block per timestep
+PARAMETER pt_num_fmcps_tstep     INTEGER 10
+
+D pt_energy_min_eV        Minimum photon energy for non-grey application
+PARAMETER pt_energy_min_eV     REAL 1.0
+
+D pt_energy_max_eV        Maximum photon energy for non-grey application
+PARAMETER pt_energy_max_eV     REAL 20.0
+
+D pt_is_corrdl            Whether to correct for energy absorbed within dt
+PARAMETER pt_is_corrdl         BOOLEAN TRUE
+
+D pt_is_deposit_urad      Whether to deposit radiation energy density
+PARAMETER pt_is_deposit_urad         BOOLEAN TRUE
+
+D pt_is_deposit_energy    Whether to deposit absorbed energy on the grid
+PARAMETER pt_is_deposit_energy         BOOLEAN TRUE
+
+D pt_is_deposit_momentum  Whether to deposit radiation momentum on the grid
+PARAMETER pt_is_deposit_momentum         BOOLEAN TRUE
+
+D pt_is_thermally_coupled  Whether to apply radiation energy source term
+PARAMETER pt_is_thermally_coupled         BOOLEAN FALSE
+
+D pt_is_dynamically_coupled  Whether to apply radiation momentum source term
+PARAMETER pt_is_dynamically_coupled         BOOLEAN FALSE
+
+D pt_is_scat_elastic        Whether physical scattering is elastic
+PARAMETER pt_is_scat_elastic              BOOLEAN TRUE
+
+D pt_is_escat_elastic       Whether effective scattering is elastic
+PARAMETER pt_is_escat_elastic             BOOLEAN TRUE
+
+D pt_is_scat_iso            Whether physical scattering is isotropic
+PARAMETER pt_is_scat_iso                  BOOLEAN TRUE
+
+D pt_is_escat_iso           Whether effective scattering is isotropic
+PARAMETER pt_is_escat_iso                 BOOLEAN TRUE
+
+D pt_temp_floor           Temperature floor after applying source terms
+PARAMETER pt_temp_floor           REAL  0.0
+
+D pt_is_veldp             Whether to turn on velocity-dependent correction
+PARAMETER pt_is_veldp                BOOLEAN FALSE
+
+
+### Ionization specific runtime parameters
+# It should be contained somewhere else
+D pt_is_photoionization     Whether to turn on photoionization
+PARAMETER pt_is_photoionization           BOOLEAN FALSE
+
+D pt_is_es_photoionization     Whether to turn on IMC for photoionization
+PARAMETER pt_is_es_photoionization           BOOLEAN FALSE
+
+D pt_is_apply_recombination     Whether to apply recombination
+PARAMETER pt_is_apply_recombination           BOOLEAN FALSE
+
+D pt_is_coll_ionization        Whether to turn on collisional photoionization
+PARAMETER pt_is_coll_ionization           BOOLEAN FALSE
+
+D pt_is_caseB                  Whether to use case B approx.
+PARAMETER pt_is_caseB           BOOLEAN TRUE
+
+D pt_is_rm_mcps_caseB          Whether to remove MCPs upon case B es
+PARAMETER pt_is_rm_mcps_caseB   BOOLEAN FALSE
+
+D pt_nH1_threshold        Whether to turn on collisional photoionization
+PARAMETER pt_nH1_threshold           REAL  1.0e-10

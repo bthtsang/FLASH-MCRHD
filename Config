@@ -1,0 +1,5 @@
+
+# Generic Config file for the Monte Carlo RHD module
+
+DEFAULT MonteCarloRHDMain
+
