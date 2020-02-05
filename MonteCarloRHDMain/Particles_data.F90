@@ -139,6 +139,7 @@ module Particles_data
 
   logical, save :: pt_PointEmission
   real, save    :: pt_PointLuminosity, pt_PointSrcPosOffset
+  integer, save :: pt_num_pmcps_tstep
 
   logical, save :: pt_ThermalEmission
   real, save    :: pt_grey_abs_opac, pt_grey_sca_opac, pt_grey_eps

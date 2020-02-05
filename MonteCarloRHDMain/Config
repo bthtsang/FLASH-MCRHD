@@ -111,6 +111,9 @@ PARAMETER pt_PointLuminosity      REAL 4.0e33
 D pt_PointSrcPosOffset    Positional offset (in all xyz, units of dx) for the point source
 PARAMETER pt_PointSrcPosOffset    REAL 1.0e-3
 
+D pt_num_pmcps_tstep      Number of MCP per point source per timestep
+PARAMETER pt_num_pmcps_tstep     INTEGER 10
+
 D pt_energy_min_eV        Minimum photon energy for non-grey application
 PARAMETER pt_energy_min_eV     REAL 1.0
 
