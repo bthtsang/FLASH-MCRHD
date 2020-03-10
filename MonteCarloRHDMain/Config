@@ -105,6 +105,9 @@ PARAMETER pt_num_fmcps_tstep     INTEGER 10
 D pt_PointEmission        Whether or not to emit radiation from a point
 PARAMETER pt_PointEmission        BOOLEAN FALSE
 
+D pt_PointPulse           Whether the point source is a pulse or continuous
+PARAMETER pt_PointPulse      BOOLEAN TRUE
+
 D pt_PointLuminosity      Constant Luminosity (in cgs) of the point source
 PARAMETER pt_PointLuminosity      REAL 4.0e33
 

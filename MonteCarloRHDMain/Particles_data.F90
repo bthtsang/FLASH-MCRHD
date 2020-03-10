@@ -137,7 +137,7 @@ module Particles_data
   logical, save :: pt_is_radial_face_vel
   integer, save :: pt_num_fmcps_tstep
 
-  logical, save :: pt_PointEmission
+  logical, save :: pt_PointEmission, pt_PointPulse
   real, save    :: pt_PointLuminosity, pt_PointSrcPosOffset
   integer, save :: pt_num_pmcps_tstep
 
