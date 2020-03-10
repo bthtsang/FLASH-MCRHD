@@ -312,6 +312,112 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
 end subroutine thermal_emission
 
+subroutine point_emission(blockID, solnVec, dtNew,&
+                          now_num, now_pos, now_time,&
+                          now_energy, now_vel, now_weight)
+  use Particles_data, only : pt_maxnewnum, pt_PointEmission, pt_PointPulse,&
+                             pt_PointPulseErad,&
+                             pt_PointLuminosity, pt_PointSrcPosOffset,&
+                             pt_num_pmcps_tstep, pt_meshMe
+  use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos
+  use Paramesh_comm_data, only : amr_mpi_meshComm
+  use new_mcp, only : sample_iso_velocity,&
+                      sample_time, sample_energy
+  use transport, only : get_cellID
+  implicit none
+#include "constants.h"
+
+  ! Input/Output
+  integer, intent(in) :: blockID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(in) :: dtNew
+  integer, intent(out) :: now_num
+  real, dimension(MDIM,pt_maxnewnum), intent(out) :: now_pos, now_vel
+  real, dimension(pt_maxnewnum), intent(out) :: now_time, now_energy, now_weight
+
+  ! saved attributes
+  logical, save :: first_call = .true.
+
+  ! Aux variables
+  integer :: ii
+  real, dimension(LOW:HIGH, MDIM) :: bndBox
+  real, dimension(MDIM) :: deltaCell, newxyz, newvel
+  integer :: originblkID, originprocID
+  integer, dimension(MDIM) :: cellID
+  real, dimension(MDIM) :: origin = (/ 0.0d0, 0.0d0, 0.0d0 /)
+  real :: dE, weight_per_mcp, dE_per_mcp, dtNow, newenergy
+
+  ! Exit when not using point emission
+  if (.not. pt_PointEmission) then
+    return
+  end if 
+
+  ! Exit after first call if in pulse mode
+  if ((.not. first_call) .and. (pt_PointPulse)) then
+    return
+  end if
+
+  ! Get local cell size
+  call Grid_getBlkBoundBox(blockID, bndBox)
+  call Grid_getDeltas(blockID, deltaCell)
+
+  ! Offset the source location to avoid on-grid complications,
+  ! default is 1.0e-3*dx
+  do ii = 1, MDIM
+    origin(ii) = origin(ii) + pt_PointSrcPosOffset*deltaCell(ii)
+  end do
+
+  ! Find out which block the origin resides on
+  call Grid_getBlkIDFromPos(origin, originblkID, originprocID, amr_mpi_meshComm)
+
+  ! Output initialization
+  now_num = 0
+  now_pos = 0.0d0
+  now_vel = 0.0d0
+  now_time = 0.0d0
+  now_energy = 0.0d0
+  now_weight = 0.0d0
+
+  ! Only emit if (blockID == block where the origin is)
+  if ((pt_meshMe == originprocID) .and. (blockID == originblkID)) then
+    if (pt_PointPulse) then
+      dE = pt_PointPulseErad
+      first_call = .false.
+    else ! continuous source
+      dE = pt_PointLuminosity * dtNew
+    end if
+
+    dE_per_mcp = dE / pt_num_pmcps_tstep
+
+    do ii = 1, pt_num_pmcps_tstep
+      ! The full time step
+      dtNow = dtNew 
+
+      ! newxyz is just the origin
+      newxyz = origin
+
+      ! Isotropic radial velocity for MCP
+      call sample_iso_velocity(newvel)
+
+      ! Use cell information for sampling MCP frequency,
+      ! constant eps in the gray case
+      call get_cellID(bndBox, deltaCell, newxyz, cellID)
+      call sample_energy(solnVec, cellID, newenergy)
+      weight_per_mcp = dE_per_mcp / newenergy
+
+      ! Record the MCP attributes
+      now_time(now_num + ii) = dtNow
+      now_pos(:, now_num + ii) = newxyz
+      now_energy(now_num + ii) = newenergy
+      now_vel(:, now_num + ii) = newvel
+      now_weight(now_num + ii) = weight_per_mcp
+    end do
+
+    ! Done sampling the point source MCPs
+    now_num = now_num + pt_num_pmcps_tstep
+  end if
+
+end subroutine point_emission
 
 subroutine face_emission(blockID, solnVec, dtNew,&
            now_num, now_pos, now_time,&
