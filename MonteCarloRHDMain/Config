@@ -108,6 +108,9 @@ PARAMETER pt_PointEmission        BOOLEAN FALSE
 D pt_PointPulse           Whether the point source is a pulse or continuous
 PARAMETER pt_PointPulse      BOOLEAN TRUE
 
+D pt_PointPulseErad       Total radiation energy in the initial pulse
+PARAMETER pt_PointPulseErad  REAL 1.0e40
+
 D pt_PointLuminosity      Constant Luminosity (in cgs) of the point source
 PARAMETER pt_PointLuminosity      REAL 4.0e33
 

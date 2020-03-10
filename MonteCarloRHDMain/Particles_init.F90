@@ -142,6 +142,7 @@ subroutine Particles_init ( restart)
   ! Point Emission
   call RuntimeParameters_get ("pt_PointEmission", pt_PointEmission)
   call RuntimeParameters_get ("pt_PointPulse", pt_PointPulse)
+  call RuntimeParameters_get ("pt_PointPulseErad", pt_PointPulseErad)
   call RuntimeParameters_get ("pt_PointLuminosity", pt_PointLuminosity)
   call RuntimeParameters_get ("pt_PointSrcPosOffset", pt_PointSrcPosOffset)
   call RuntimeParameters_get ("pt_num_pmcps_tstep", pt_num_pmcps_tstep)
