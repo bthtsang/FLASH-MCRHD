@@ -226,6 +226,69 @@ subroutine sample_therm_face_velocity(r_hat, theta_prime, velvec)
 
 end subroutine sample_therm_face_velocity
 
+
+! Cartesian version of thermal face velocity sampling
+subroutine sample_cart_therm_face_velocity(side, axis, velvec)
+  use Simulation_data, only : clight
+  use random, only : rand
+  implicit none
+
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  integer, intent(in) :: side
+  integer, intent(in) :: axis
+  real, dimension(MDIM), intent(out) :: velvec
+
+  ! aux variables
+  real :: v_forward, v_2, v_3
+  real :: xi, mu
+  real :: theta, sintheta, costheta
+  real :: phi, sinphi, cosphi
+
+  ! Initialization
+  velvec = 1.0d0
+
+  xi = rand() ! Planck surface has theta in [0, 90], so mu in [0, 1]
+  mu = sqrt(xi) ! outward pointing direction should take sqrt(xi)
+
+  theta = ACOS(mu)
+  sintheta = SIN(theta)
+  costheta = COS(theta)
+
+  phi = 2.0d0 * PI * rand()
+  sinphi = SIN(phi)
+  cosphi = COS(phi)
+
+  ! Setting forward and other components
+  v_forward = clight * costheta
+  v_2       = clight * sintheta * sinphi
+  v_3       = clight * sintheta * cosphi
+
+  ! Assigning velocity components
+  velvec(axis) = v_forward
+  ! The order of the non-forward direction does not matter
+  if (axis .EQ. IAXIS) then
+    velvec(JAXIS) = v_2
+    velvec(KAXIS) = v_3
+  else if (axis .EQ. JAXIS) then
+    velvec(IAXIS) = v_2
+    velvec(KAXIS) = v_3
+  else if (axis .EQ. KAXIS) then
+    velvec(IAXIS) = v_2
+    velvec(JAXIS) = v_3
+  else
+    print *, "Error: Unknown axis for vel. sampling"
+  end if
+
+  ! Make sure the direction is pointing into the domain
+  if (side == LOW) velvec(axis) = ABS(velvec(axis))
+  if (side == HIGH) velvec(axis) = -ABS(velvec(axis))
+
+end subroutine sample_cart_therm_face_velocity
+
+
 function cross_product(va, vb)
   implicit none
 #include "constants.h"
