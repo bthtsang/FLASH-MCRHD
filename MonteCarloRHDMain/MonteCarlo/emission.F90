@@ -477,6 +477,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_is_therm_face_vel, pt_smlpush
   use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
                              Grid_getBlkBC, Grid_getBlkPhysicalSize
+  use Grid_data, only: gr_geometry
   use Simulation_data, only : sigma, clight
   use Driver_interface, only : Driver_abortFlash
   use new_mcp, only : sample_blk_position, sample_iso_velocity,&
@@ -574,7 +575,11 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           if (ii .EQ. LOW) newxyz(jj) = (1.0d0 + pt_smlpush)*newxyz(jj)
 
           if (pt_is_radial_face_vel) then
-            call get_cartesian_position(newxyz, cart_pos) 
+            if (gr_geometry == SPHERICAL) then
+              call get_cartesian_position(newxyz, cart_pos) 
+            else if (gr_geometry = CARTESIAN) then
+              cart_pos = newxyz
+            end if
             r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
             newvel = clight * r_hat 
           else if (pt_is_iso_face_vel) then
