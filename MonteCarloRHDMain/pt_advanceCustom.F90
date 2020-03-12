@@ -56,7 +56,7 @@ subroutine pt_advanceCustom(dtOld, dtNew, particles, p_count, ind)
   ! Start performing RT
   call Timers_start("Radiation Transport")
 
-  ! Emission of radiation, including both thermal and face
+  ! Emission of radiation, including both thermal, point, and face
   call emit_mcps(particles, p_count, dtNew, ind)
 
   ! Radiation transport

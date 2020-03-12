@@ -33,7 +33,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   ! aux parameters
   integer :: b
   logical :: success 
-  integer :: num_thermal, num_face, old_pt_numLocal
+  integer :: num_thermal, num_point, num_face, old_pt_numLocal
 
   integer :: now_num
   real, dimension(MDIM,pt_maxnewnum) :: now_pos, now_vel
@@ -78,6 +78,21 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
       new_num = new_num + now_num
       num_thermal = new_num
+    end if
+
+    ! Point emission
+    call point_emission(blkList(b), solnVec, dtNew,&
+           now_num, now_pos, now_time, &
+           now_energy, now_vel, now_weight)
+    if (now_num .GT. 0) then
+      new_pos(1:MDIM,new_num+1:new_num+now_num) = now_pos(1:MDIM,1:now_num)
+      new_vel(1:MDIM,new_num+1:new_num+now_num) = now_vel(1:MDIM,1:now_num)
+      new_time(new_num+1:new_num+now_num) = now_time(1:now_num)
+      new_energy(new_num+1:new_num+now_num) = now_energy(1:now_num)
+      new_weight(new_num+1:new_num+now_num) = now_weight(1:now_num)
+
+      new_num = new_num + now_num
+      num_point = new_num
     end if
 
     ! Face emission
@@ -315,11 +330,15 @@ end subroutine thermal_emission
 subroutine point_emission(blockID, solnVec, dtNew,&
                           now_num, now_pos, now_time,&
                           now_energy, now_vel, now_weight)
+  use Simulation_data, only : sim_xMax, sim_xMin,&
+                              sim_yMax, sim_yMin,&
+                              sim_zMax, sim_zMin
   use Particles_data, only : pt_maxnewnum, pt_PointEmission, pt_PointPulse,&
                              pt_PointPulseErad,&
                              pt_PointLuminosity, pt_PointSrcPosOffset,&
                              pt_num_pmcps_tstep, pt_meshMe
-  use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos
+  use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos,&
+                             Grid_getListOfBlocks
   use Paramesh_comm_data, only : amr_mpi_meshComm
   use new_mcp, only : sample_iso_velocity,&
                       sample_time, sample_energy
@@ -337,14 +356,17 @@ subroutine point_emission(blockID, solnVec, dtNew,&
 
   ! saved attributes
   logical, save :: first_call = .true.
+  integer, save :: num_of_calls = 0
 
   ! Aux variables
   integer :: ii
+  integer, dimension(MAXBLOCKS) :: blkList
+  integer :: numofblks
   real, dimension(LOW:HIGH, MDIM) :: bndBox
   real, dimension(MDIM) :: deltaCell, newxyz, newvel
   integer :: originblkID, originprocID
   integer, dimension(MDIM) :: cellID
-  real, dimension(MDIM) :: origin = (/ 0.0d0, 0.0d0, 0.0d0 /)
+  real, dimension(MDIM) :: origin
   real :: dE, weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
   ! Exit when not using point emission
@@ -357,9 +379,29 @@ subroutine point_emission(blockID, solnVec, dtNew,&
     return
   end if
 
+  ! Actual execution of subroutine for this processor
+  ! increment number of calls
+  num_of_calls = num_of_calls + 1
+
+  ! Get the total number of leaf blocks
+  call Grid_getListOfBlocks(LEAF, blkList, numofblks)
+
+  ! Flag it as non-first_call when all leaf blocks are done
+  if (num_of_calls == numofblks) then
+    first_call = .false.
+  end if
+
+!  ! Actual call performed
+!  first_call = .false.
+
   ! Get local cell size
   call Grid_getBlkBoundBox(blockID, bndBox)
   call Grid_getDeltas(blockID, deltaCell)
+
+  ! Define the origin of the simulation domain to be the center
+  origin(1) = 0.5*(sim_xMax - sim_xMin)
+  origin(2) = 0.5*(sim_yMax - sim_yMin)
+  origin(3) = 0.5*(sim_zMax - sim_zMin)
 
   ! Offset the source location to avoid on-grid complications,
   ! default is 1.0e-3*dx
@@ -369,6 +411,12 @@ subroutine point_emission(blockID, solnVec, dtNew,&
 
   ! Find out which block the origin resides on
   call Grid_getBlkIDFromPos(origin, originblkID, originprocID, amr_mpi_meshComm)
+  ! Print point source location in first call by host processor
+  if ((pt_meshMe == originprocID) .and. (num_of_calls == 1)) then
+    print *, "Point source hosted by processor", originprocID
+    print *, "Point source block ID", originblkID
+    print *, "Point source location", origin
+  end if
 
   ! Output initialization
   now_num = 0
@@ -382,7 +430,6 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   if ((pt_meshMe == originprocID) .and. (blockID == originblkID)) then
     if (pt_PointPulse) then
       dE = pt_PointPulseErad
-      first_call = .false.
     else ! continuous source
       dE = pt_PointLuminosity * dtNew
     end if
