@@ -477,6 +477,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 ! Make sure the phi values are legal for the new_cellID 
                 call sanitize_phi_periodic_BCs(cellID, xcellID, &
                                            bndBox, deltaCell, particles(:,i))
+                ! Do the same check for Cartesian coordinate
+                call sanitize_cart_periodic_BCs(cellID, xcellID, &
+                                           bndBox, deltaCell, particles(:,i))
+
                 ! xcellID is updated to legal values also
                 call sanitize_xblock_cellID(cellID, xcellID)
 
@@ -499,6 +503,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                     print *, ">xcellID_original", xcellID_original
                     print *, ">chk_cellID", chk_cellID
                     print *, ">new_cellID", new_cellID
+                    print *, "> vel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
 
                     print *, ">pos_before_adv", pos_before_adv
                     print *, ">pos_after_adv", pos_after_adv
@@ -1253,6 +1258,79 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
   particle(POSX_PART_PROP:POSZ_PART_PROP) = now_pos
 
 end subroutine sanitize_phi_periodic_BCs
+
+
+! Subroutine to apply the periodic boundary condition 
+! in all the xyz directions in Cartesian coordinate
+subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
+                                 bndBox, deltaCell, particle)
+  use Particles_data, only : pt_smlpush
+  use Grid_interface, only : Grid_getBlkBC
+  use Grid_data, only: gr_geometry
+  use Simulation_data, only : sim_xMin, sim_xMax,&
+                              sim_yMin, sim_yMax,&
+                              sim_zMin, sim_zMax
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/output
+  integer, dimension(MDIM), intent(in) :: cellID
+  integer, dimension(MDIM), intent(in) :: xcellID
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
+  real, dimension(MDIM), intent(in) :: deltaCell
+  real, dimension(NPART_PROPS), intent(inout) :: particle
+
+  ! aux variables
+  real, dimension(MDIM) :: now_pos
+  integer, dimension(MDIM) :: delta_cellID
+  integer :: currentBlk, ii
+  real:: zp
+  integer, dimension(2,MDIM) :: faces, onBoundary
+  real, dimension(MDIM) :: domain_min, domain_max
+
+  ! Gathering particle information
+  ! This now_pos should be near a cell boundary
+  now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
+  currentBlk = particle(BLK_PART_PROP)
+
+  ! Check for periodic BC, for phi direction
+  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+
+  delta_cellID = xcellID - cellID
+
+  domain_min(1) = sim_xMin
+  domain_min(2) = sim_yMin
+  domain_min(3) = sim_zMin
+  domain_max(1) = sim_xMax
+  domain_max(2) = sim_yMax
+  domain_max(3) = sim_zMax
+
+  do ii = IAXIS, KAXIS
+    if (delta_cellID(ii) == 1) then
+      ! For Cartesian we need to take care of x/y/z directions
+      if (gr_geometry == CARTESIAN) then
+        if (now_pos(ii) > domain_max(ii)) then
+          now_pos(ii) = now_pos(ii) - domain_max(ii)
+        end if
+      end if
+
+    else if (delta_cellID(ii) == -1) then
+
+      ! For Cartesian we need to take care of x/y/z directions
+      if (gr_geometry == CARTESIAN) then
+        if (now_pos(ii) < domain_min(ii)) then
+          now_pos(ii) = now_pos(ii) + domain_max(ii)
+        end if
+      end if
+
+    end if
+  end do
+
+  ! Update to the shifted position
+  particle(POSX_PART_PROP:POSZ_PART_PROP) = now_pos
+
+end subroutine sanitize_cart_periodic_BCs
 
 
 ! Subroutine to modify xcellID to take into account
