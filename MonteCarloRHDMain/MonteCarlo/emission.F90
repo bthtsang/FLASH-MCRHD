@@ -481,7 +481,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   use Simulation_data, only : sigma, clight
   use Driver_interface, only : Driver_abortFlash
   use new_mcp, only : sample_blk_position, sample_iso_velocity,&
-                      sample_therm_face_velocity, &
+                      sample_therm_face_velocity,&
+                      sample_cart_therm_face_velocity,&
                       sample_time, sample_energy
   use transport, only : get_cellID
   use spherical, only : get_cartesian_position
@@ -574,20 +575,28 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           if (ii .EQ. HIGH) newxyz(jj) = (1.0d0 - pt_smlpush)*newxyz(jj)
           if (ii .EQ. LOW) newxyz(jj) = (1.0d0 + pt_smlpush)*newxyz(jj)
 
+          ! Sampling MCP's velocity
           if (pt_is_radial_face_vel) then
             if (gr_geometry == SPHERICAL) then
               call get_cartesian_position(newxyz, cart_pos) 
-            else if (gr_geometry = CARTESIAN) then
+            else if (gr_geometry == CARTESIAN) then
               cart_pos = newxyz
+              print *, "face_emission: warning, radial velocity in Cart."
             end if
             r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
             newvel = clight * r_hat 
           else if (pt_is_iso_face_vel) then
             call sample_iso_velocity(newvel)
           else if (pt_is_therm_face_vel) then
-            call get_cartesian_position(newxyz, cart_pos) 
-            r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
-            call sample_therm_face_velocity(r_hat, newxyz(JAXIS), newvel)
+            if (gr_geometry == SPHERICAL) then
+              call get_cartesian_position(newxyz, cart_pos) 
+              r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
+              call sample_therm_face_velocity(r_hat, newxyz(JAXIS), newvel)
+            else if (gr_geometry == CARTESIAN) then
+              call sample_cart_therm_face_velocity(ii, jj, newvel)
+            end if
+          else
+            call Driver_abortFlash("face_emission: velocity sampling unspecified.")
           end if
 
           call get_cellID(bndBox, deltaCell, newxyz, cellID)
