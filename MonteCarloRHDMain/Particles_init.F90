@@ -120,6 +120,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_maxnewnum", pt_maxnewnum)
  
   call RuntimeParameters_get ("pt_ThermalEmission", pt_ThermalEmission)
+  call RuntimeParameters_get ("pt_marshak_eos", pt_marshak_eos)
   call RuntimeParameters_get ("pt_grey_abs_opac", pt_grey_abs_opac)
   call RuntimeParameters_get ("pt_grey_sca_opac", pt_grey_sca_opac)
   call RuntimeParameters_get ("pt_grey_eps", pt_grey_eps)

@@ -51,6 +51,9 @@ PARAMETER pt_smlpush         REAL 1.0e-10
 D pt_ThermalEmission       Whether to turn on thermal emission
 PARAMETER pt_ThermalEmission BOOLEAN FALSE
 
+D pt_marshak_eos           Whether to apply the Marshak EOS
+PARAMETER pt_marshak_eos     BOOLEAN FALSE
+
 D pt_is_grey         Whether to use grey opacity for thermal rad.
 PARAMETER pt_is_grey BOOLEAN TRUE
 
