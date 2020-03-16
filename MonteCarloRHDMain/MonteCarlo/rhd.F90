@@ -24,11 +24,14 @@ end subroutine cellAddVar
 subroutine apply_rad_source_terms(dt)
   use Particles_data, only : pt_is_thermally_coupled,&
                              pt_is_dynamically_coupled,&
-                             pt_temp_floor, pt_is_apply_recombination
+                             pt_temp_floor, pt_is_apply_recombination,&
+                             pt_marshak_eos
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getListOfBlocks,&
                              Grid_getBlkPtr, Grid_releaseBlkPtr
   use Eos_interface, only : Eos_wrapped
+  use Simulation_data, only : a_rad
   use Multispecies_interface, only : Multispecies_getProperty
+  use Driver_interface, only : Driver_abortFlash
 
   implicit none
 #include "Flash.h"
@@ -46,9 +49,9 @@ subroutine apply_rad_source_terms(dt)
   real :: ekin_old, ekin_new
   real :: dvxdt, dvydt, dvzdt
   integer, dimension(2, MDIM) :: EoscellID
-  real :: temp
+  real :: temp, rho, eint, ekin, ener
   ! Debug
-  real :: oldtemp, oldeint, eint, netheating, oldele
+  real :: oldtemp, oldeint, netheating, oldele
 
   ! Get the list of leaf blocks
   call Grid_getListOfBlocks(LEAF, blkList, numofblks)
@@ -64,6 +67,23 @@ subroutine apply_rad_source_terms(dt)
     do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
       do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
         do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
+
+          ! For marshak EOS, construct energies differently
+          if (pt_marshak_eos) then
+            rho = solnVec(DENS_VAR,i,j,k)
+            temp = solnVec(TEMP_VAR,i,j,k)
+
+            eint = 4.0*a_rad*temp**4 / rho
+
+            ! override the variable EINT_VAR here [erg/g]
+            solnVec(EINT_VAR,i,j,k) = eint
+
+            ekin = 0.5d0*dot_product(solnVec(VELX_VAR:VELZ_VAR,i,j,k),&
+                                      solnVec(VELX_VAR:VELZ_VAR,i,j,k))
+            ener = eint + ekin
+            ! override the variable ENER_VAR here [erg/g]
+            solnVec(ENER_VAR,i,j,k) = ener
+          end if
 
           ! Apply radiation energy source
           if (pt_is_thermally_coupled) then
@@ -183,9 +203,35 @@ subroutine apply_rad_source_terms(dt)
                 EoscellID(:, JAXIS) = j
                 EoscellID(:, KAXIS) = k
                 solnVec(TEMP_VAR,i,j,k) = pt_temp_floor
+
+                ! Override with the new temperature
                 call Eos_wrapped(MODE_DENS_TEMP, EoscellID, blockID)
+
+                if (pt_marshak_eos) then
+                  call Driver_abortFlash("rhd: eint modified by temp. floor but&
+                                          marshak EOS is on. Please follow up.")
+                end if
               end if
             end if
+          end do
+        end do
+      end do
+    end if
+
+    ! Override with Marshak test EOS if needed
+    if (pt_marshak_eos) then
+      do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
+        do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
+          do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
+
+            eint = solnVec(EINT_VAR,i,j,k)
+            rho  = solnVec(DENS_VAR,i,j,k)
+
+            temp = (rho*eint/4.0/a_rad)**(0.25)
+
+            ! Override temperature computed from Eos_wrapped
+            solnVec(TEMP_VAR,i,j,k) = temp
+            ! EINT and ENER should not be changed
           end do
         end do
       end do

@@ -178,7 +178,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
               pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
-              pt_is_veldp
+              pt_is_veldp, pt_marshak_eos
   use Grid_interface, only : Grid_getBlkIndexLimits,&
               Grid_getBlkBoundBox, Grid_getDeltas
   use Simulation_data, only : R, sigma, a_rad
@@ -259,9 +259,14 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
         fn = 1.0d0
         if ((pt_is_eff_scattering) .and. (dE .ne. 0.0d0)) then
           c_V = R / ((gamc - 1.0d0)*eos_singleSpeciesA)
-
           ! IMC beta
           beta = (4.0d0 * a_rad * (temp**3)) / (rho * c_V)
+
+          ! Override when Marshak EOS is turned on
+          if (pt_marshak_eos) then
+            c_V = 4.0 * a_rad * (temp**4)  ! Not used
+            beta = 0.25
+          end if
 
           call comp_fleck_factor(kp, beta, dtNew, fn)
         end if
