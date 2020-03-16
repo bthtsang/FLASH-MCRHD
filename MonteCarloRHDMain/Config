@@ -48,6 +48,9 @@ PARAMETER pt_es_alpha    REAL 1.0
 D pt_smlpush         small value to guarantee MCPs get through boundaries
 PARAMETER pt_smlpush         REAL 1.0e-10
 
+D pt_initradfield_num      Number of MCPs per cell as the initial radiation field
+PARAMETER pt_initradfield_num      INTEGER 0
+
 D pt_ThermalEmission       Whether to turn on thermal emission
 PARAMETER pt_ThermalEmission BOOLEAN FALSE
 

@@ -119,6 +119,8 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_eff_scattering", pt_is_eff_scattering)
   call RuntimeParameters_get ("pt_maxnewnum", pt_maxnewnum)
  
+  call RuntimeParameters_get ("pt_initradfield_num", pt_initradfield_num)
+
   call RuntimeParameters_get ("pt_ThermalEmission", pt_ThermalEmission)
   call RuntimeParameters_get ("pt_marshak_eos", pt_marshak_eos)
   call RuntimeParameters_get ("pt_grey_abs_opac", pt_grey_abs_opac)

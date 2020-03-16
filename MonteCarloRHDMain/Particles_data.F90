@@ -142,6 +142,9 @@ module Particles_data
   real, save    :: pt_PointLuminosity, pt_PointSrcPosOffset
   integer, save :: pt_num_pmcps_tstep
 
+  ! use integer switch
+  integer, save :: pt_initradfield_num
+
   logical, save :: pt_ThermalEmission
   logical, save :: pt_marshak_eos
   real, save    :: pt_grey_abs_opac, pt_grey_sca_opac, pt_grey_eps
