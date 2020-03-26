@@ -494,7 +494,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 ! adjust it to be a cross-processor MCP.
                 ! This could happen if a periodic BC sends a MCP farther
                 ! than one block away
-                do ii = 1, MDIM
+                do ii = 1, NDIM
                   if ((newPos(ii) < new_bndBox(LOW,ii)) .or.&
                       (newPos(ii) > new_bndBox(HIGH,ii))) then
                     print *, "StillWrongBlk", ii
@@ -687,7 +687,18 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                        MPI_SUM, amr_mpi_meshComm, ierr)
     call Particles_getGlobalNum(globalNumParticles)
 
-    frac_done = real(num_done_global) / real(globalNumParticles)
+    if (globalNumParticles > 0) then
+      frac_done = real(num_done_global) / real(globalNumParticles)
+    else
+      frac_done = 1.0 ! Ran out of global particles
+
+      if ((num_done_global /= globalNumParticles) .and.&
+         (pt_meshMe == 0)) then
+        call Driver_abortFlash("transport_mcps: globalnumparticles = 0&
+                                but numbers not match.")
+      end if
+    end if
+
     if (pt_meshMe .EQ. 0) call progress(frac_done)
 
     numpass = numpass + 1
