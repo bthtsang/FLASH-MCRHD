@@ -43,12 +43,14 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
     Grid_releaseBlkPtr
 
    use IO_data, ONLY : io_globalMe, io_writeMscalarIntegrals
+
+  use Particles_data, only : pt_typeInfo, particles, pt_meshMe
   implicit none
 
 #include "Flash_mpi.h"
 #include "constants.h"
 #include "Flash.h"
-  
+#include "Particles.h"
   
   real, intent(in) :: simTime
 
@@ -69,7 +71,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
 #ifdef MAGP_VAR
   integer, parameter ::  nGlobalSumProp = 8              ! Number of globally-summed regular quantities
 #else
-  integer, parameter ::  nGlobalSumProp = 7 + 3          ! Number of globally-summed regular quantities
+  integer, parameter ::  nGlobalSumProp = 7 + 4          ! Number of globally-summed regular quantities
 #endif
   integer, parameter ::  nGlobalSum = nGlobalSumProp + NMASS_SCALARS ! Number of globally-summed quantities
   real :: gsum(nGlobalSum) !Global summed quantities
@@ -83,6 +85,11 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
   integer :: point(MDIM)
   integer :: ioStat
 
+! MCRHD additions
+  integer :: i_begin, i_count, i_end, p
+  integer :: p_blk
+  real    :: p_nump, p_ener
+
   if (io_writeMscalarIntegrals) then
      nGlobalSumUsed = nGlobalSum
   else
@@ -94,7 +101,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
   lsum(1:nGlobalSumUsed) = 0.
   
   call Grid_getListOfBlocks(LEAF, blockList, count)
-  
+
   do lb = 1, count
      !get the index limits of the block
      call Grid_getBlkIndexLimits(blockList(lb), blkLimits, blkLimitsGC)
@@ -190,7 +197,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
 
 #ifdef MAGP_VAR
               ! magnetic energy
-              lsum(11) = lsum(11) + solnData(MAGP_VAR,i,j,k)*dvol
+              lsum(12) = lsum(12) + solnData(MAGP_VAR,i,j,k)*dvol
 #endif
 
 #ifdef DENS_VAR
@@ -209,6 +216,29 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
         enddo
      enddo
      call Grid_releaseBlkPtr(blockList(lb), solnData)
+
+#ifdef PHOTON_PART_TYPE
+     ! Added by Benny to track also total MCP radiation energy
+     ! The pt_typeInfo data structure tracks the PART_LOCAL number, 
+     ! which is the number of type-TYPE MCPs that are residing in
+     ! the local leaf blocks. 'particles' array contains local MCPs,
+     ! so no PROC_PART_PROP filtering is needed.
+     i_begin = pt_typeInfo(PART_TYPE_BEGIN, PHOTON_PART_TYPE)
+     i_count = pt_typeInfo(PART_LOCAL, PHOTON_PART_TYPE)
+     i_end   = i_begin + i_count - 1
+
+     do p = i_begin, i_end
+       p_blk = int(particles(BLK_PART_PROP, p))
+
+       ! count for the current blkID
+       if (p_blk == blockList(lb)) then
+         p_nump = particles(NUMP_PART_PROP, p)
+         p_ener = particles(ENER_PART_PROP, p)
+         lsum(11) = lsum(11) + p_nump*p_ener
+       end if
+     end do
+     ! End E_MCPs summation
+#endif
 
   enddo
   
@@ -249,6 +279,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
              'E_radiation               ', &
              'E_absorbed                ', &
              'E_emitted                 ', &
+             'E_MCPs                    ', &
              (msName(ivar),ivar=MASS_SCALARS_BEGIN,&
               min(MASS_SCALARS_END,&
                   MASS_SCALARS_BEGIN+nGlobalSumUsed-nGlobalSumProp-1))
