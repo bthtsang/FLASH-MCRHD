@@ -282,10 +282,6 @@ subroutine sample_cart_therm_face_velocity(side, axis, velvec)
     print *, "Error: Unknown axis for vel. sampling"
   end if
 
-  ! Make sure the direction is pointing into the domain
-  if (side == LOW) velvec(axis) = ABS(velvec(axis))
-  if (side == HIGH) velvec(axis) = -ABS(velvec(axis))
-
 end subroutine sample_cart_therm_face_velocity
 
 

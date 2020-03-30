@@ -73,7 +73,7 @@ subroutine apply_rad_source_terms(dt)
             rho = solnVec(DENS_VAR,i,j,k)
             temp = solnVec(TEMP_VAR,i,j,k)
 
-            eint = 4.0*a_rad*temp**4 / rho
+            eint = a_rad*temp**4 / rho
 
             ! override the variable EINT_VAR here [erg/g]
             solnVec(EINT_VAR,i,j,k) = eint
@@ -218,7 +218,7 @@ subroutine apply_rad_source_terms(dt)
       end do
     end if
 
-    ! Override with Marshak test EOS if needed
+    ! Override temperature update with Marshak test EOS if needed
     if (pt_marshak_eos) then
       do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
         do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
@@ -227,7 +227,7 @@ subroutine apply_rad_source_terms(dt)
             eint = solnVec(EINT_VAR,i,j,k)
             rho  = solnVec(DENS_VAR,i,j,k)
 
-            temp = (rho*eint/4.0/a_rad)**(0.25)
+            temp = (rho*eint/a_rad)**(0.25)
 
             ! Override temperature computed from Eos_wrapped
             solnVec(TEMP_VAR,i,j,k) = temp
