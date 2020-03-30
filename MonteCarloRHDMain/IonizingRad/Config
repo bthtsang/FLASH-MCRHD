@@ -1,4 +1,12 @@
 
+### Packages for multispecies
+REQUESTS Multispecies/MultispeciesMain
+REQUESTS physics/Eos/EosMain/Multigamma
+
+SPECIES H1
+SPECIES HP
+SPECIES ELE
+
 ### Define preprocessor parameter
 PPDEFINE FLASH_MCRHD_IONIZATION
 
