@@ -112,7 +112,7 @@ module Particles_data
 
 !! Parameters needed for IMC
   logical, save :: pt_is_eff_scattering, pt_is_grey
-  integer, save    :: pt_maxnewnum
+  integer, save    :: pt_maxnewnum, pt_max_rt_iterations
   real, save    :: pt_es_alpha
   real, save    :: pt_smlpush
 

@@ -42,6 +42,9 @@ PARAMETER pt_is_eff_scattering    BOOLEAN TRUE
 D pt_maxnewnum       Maximum number of new MCPs
 PARAMETER pt_maxnewnum  INTEGER    10000
 
+D pt_max_rt_iterations    Maximum number of RT passes
+PARAMETER pt_max_rt_iterations   INTEGER 1000
+
 D pt_es_alpha        alpha for the IMC fleck factor
 PARAMETER pt_es_alpha    REAL 1.0
 
