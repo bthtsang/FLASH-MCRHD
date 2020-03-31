@@ -35,7 +35,6 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   logical :: success 
   integer :: num_thermal, num_point, num_face, old_pt_numLocal
 
-  integer :: now_num
   real, dimension(MDIM,pt_maxnewnum) :: now_pos, now_vel
   real, dimension(pt_maxnewnum) :: now_time, now_energy, now_weight
 
@@ -67,47 +66,44 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
     ! Thermal radiation
     call thermal_emission(blkList(b), solnVec, dtNew,&
-           now_num, now_pos, now_time, &
+           num_thermal, now_pos, now_time, &
            now_energy, now_vel, now_weight)
-    if (now_num .GT. 0) then
-      new_pos(1:MDIM,new_num+1:new_num+now_num) = now_pos(1:MDIM,1:now_num)
-      new_vel(1:MDIM,new_num+1:new_num+now_num) = now_vel(1:MDIM,1:now_num)
-      new_time(new_num+1:new_num+now_num) = now_time(1:now_num)
-      new_energy(new_num+1:new_num+now_num) = now_energy(1:now_num)
-      new_weight(new_num+1:new_num+now_num) = now_weight(1:now_num)
+    if (num_thermal .GT. 0) then
+      new_pos(1:MDIM,new_num+1:new_num+num_thermal) = now_pos(1:MDIM,1:num_thermal)
+      new_vel(1:MDIM,new_num+1:new_num+num_thermal) = now_vel(1:MDIM,1:num_thermal)
+      new_time(new_num+1:new_num+num_thermal) = now_time(1:num_thermal)
+      new_energy(new_num+1:new_num+num_thermal) = now_energy(1:num_thermal)
+      new_weight(new_num+1:new_num+num_thermal) = now_weight(1:num_thermal)
 
-      new_num = new_num + now_num
-      num_thermal = new_num
+      new_num = new_num + num_thermal
     end if
 
     ! Point emission
     call point_emission(blkList(b), solnVec, dtNew,&
-           now_num, now_pos, now_time, &
+           num_point, now_pos, now_time, &
            now_energy, now_vel, now_weight)
-    if (now_num .GT. 0) then
-      new_pos(1:MDIM,new_num+1:new_num+now_num) = now_pos(1:MDIM,1:now_num)
-      new_vel(1:MDIM,new_num+1:new_num+now_num) = now_vel(1:MDIM,1:now_num)
-      new_time(new_num+1:new_num+now_num) = now_time(1:now_num)
-      new_energy(new_num+1:new_num+now_num) = now_energy(1:now_num)
-      new_weight(new_num+1:new_num+now_num) = now_weight(1:now_num)
+    if (num_point .GT. 0) then
+      new_pos(1:MDIM,new_num+1:new_num+num_point) = now_pos(1:MDIM,1:num_point)
+      new_vel(1:MDIM,new_num+1:new_num+num_point) = now_vel(1:MDIM,1:num_point)
+      new_time(new_num+1:new_num+num_point) = now_time(1:num_point)
+      new_energy(new_num+1:new_num+num_point) = now_energy(1:num_point)
+      new_weight(new_num+1:new_num+num_point) = now_weight(1:num_point)
 
-      new_num = new_num + now_num
-      num_point = new_num
+      new_num = new_num + num_point
     end if
 
     ! Face emission
     call face_emission(blkList(b), solnVec, dtNew,&
-           now_num, now_pos, now_time, &
+           num_face, now_pos, now_time, &
            now_energy, now_vel, now_weight)
-    if (now_num .GT. 0) then
-      new_pos(1:MDIM,new_num+1:new_num+now_num) = now_pos(1:MDIM,1:now_num)
-      new_vel(1:MDIM,new_num+1:new_num+now_num) = now_vel(1:MDIM,1:now_num)
-      new_time(new_num+1:new_num+now_num) = now_time(1:now_num)
-      new_energy(new_num+1:new_num+now_num) = now_energy(1:now_num)
-      new_weight(new_num+1:new_num+now_num) = now_weight(1:now_num)
+    if (num_face .GT. 0) then
+      new_pos(1:MDIM,new_num+1:new_num+num_face) = now_pos(1:MDIM,1:num_face)
+      new_vel(1:MDIM,new_num+1:new_num+num_face) = now_vel(1:MDIM,1:num_face)
+      new_time(new_num+1:new_num+num_face) = now_time(1:num_face)
+      new_energy(new_num+1:new_num+num_face) = now_energy(1:num_face)
+      new_weight(new_num+1:new_num+num_face) = now_weight(1:num_face)
 
-      new_num = new_num + now_num
-      num_face = new_num
+      new_num = new_num + num_face
     end if
 
     ! Recombination emission
@@ -216,7 +212,6 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
   real, dimension(NPART_PROPS) :: newparticle
   real :: dshift
 
-
   ! Initialization
   now_num = 0
   now_pos = 0.0d0
@@ -265,7 +260,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
           ! Override when Marshak EOS is turned on
           if (pt_marshak_eos) then
             c_V = 4.0 * a_rad * (temp**4)  ! Not used
-            beta = 0.25
+            beta = 1.0 !0.25
           end if
 
           call comp_fleck_factor(kp, beta, dtNew, fn)
@@ -374,10 +369,16 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   real, dimension(MDIM) :: origin
   real :: dE, weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
+  ! Initialization
+  now_num = 0
+  now_pos = 0.0d0
+  now_vel = 0.0d0
+  now_time = 0.0d0
+  now_energy = 0.0d0
+  now_weight = 0.0d0
+
   ! Exit when not using point emission
-  if (.not. pt_PointEmission) then
-    return
-  end if 
+  if (.not. pt_PointEmission) return
 
   ! Exit after first call if in pulse mode
   if ((.not. first_call) .and. (pt_PointPulse)) then
@@ -422,14 +423,6 @@ subroutine point_emission(blockID, solnVec, dtNew,&
     print *, "Point source block ID", originblkID
     print *, "Point source location", origin
   end if
-
-  ! Output initialization
-  now_num = 0
-  now_pos = 0.0d0
-  now_vel = 0.0d0
-  now_time = 0.0d0
-  now_energy = 0.0d0
-  now_weight = 0.0d0
 
   ! Only emit if (blockID == block where the origin is)
   if ((pt_meshMe == originprocID) .and. (blockID == originblkID)) then
@@ -585,8 +578,12 @@ subroutine face_emission(blockID, solnVec, dtNew,&
             if (gr_geometry == SPHERICAL) then
               call get_cartesian_position(newxyz, cart_pos) 
             else if (gr_geometry == CARTESIAN) then
-              cart_pos = newxyz
-              print *, "face_emission: warning, radial velocity in Cart."
+              !cart_pos = newxyz
+              !print *, "face_emission: warning, radial velocity in Cart."
+              ! For Cartesian coord., align newvel with jj
+              cart_pos = 0.0
+              cart_pos(jj) = 1.0  ! face emission axis unit vector
+              if (ii == HIGH) cart_pos(jj) = -1.0
             end if
             r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
             newvel = clight * r_hat 
@@ -603,6 +600,10 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           else
             call Driver_abortFlash("face_emission: velocity sampling unspecified.")
           end if
+
+          ! Make sure the direction is pointing into the domain
+          if (ii == LOW)  newvel(jj) = abs(newvel(jj))
+          if (ii == HIGH) newvel(jj) = -abs(newvel(jj))
 
           call get_cellID(bndBox, deltaCell, newxyz, cellID)
 
