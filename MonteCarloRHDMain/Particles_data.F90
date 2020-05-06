@@ -115,6 +115,7 @@ module Particles_data
   integer, save    :: pt_maxnewnum, pt_max_rt_iterations
   real, save    :: pt_es_alpha
   real, save    :: pt_smlpush
+  logical, save :: pt_half_rt_timesteps
 
   integer, parameter :: pt_STAY_ID =  1
   integer, parameter :: pt_SCAT_ID =  2
@@ -141,6 +142,7 @@ module Particles_data
   real, save    :: pt_PointPulseErad
   real, save    :: pt_PointLuminosity, pt_PointSrcPosOffset
   integer, save :: pt_num_pmcps_tstep
+  integer, save :: originprocID, originblkID
 
   ! use integer switch
   integer, save :: pt_initradfield_num

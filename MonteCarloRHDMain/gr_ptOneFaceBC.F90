@@ -106,6 +106,9 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
   ! Added by Benny for spherical coordinate system
   real, dimension(MDIM) :: vel_reflected
 
+  ! Benny debugging
+  real, dimension(MDIM) :: old_mcp_pos, old_mcp_vel
+
 
   predictor=gr_ptPosTmp
 
@@ -157,8 +160,12 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
        gr_domainBC(face,axis)==HYDROSTATIC_NVREFL) then
      !! with reflecting conditions, the particle stays within
      !! the same block, the position changes
+     old_mcp_pos = particle(gr_ptPosx:gr_ptPosz)
+     old_mcp_vel = particle(gr_ptVelx:gr_ptVelz)
      particle(pos)= 2.0*corner(face)-particle(pos)
      !if (particle(TAG_PART_PROP)==82.) write(*,*)'particle(pos) a=',particle(pos)
+
+
 
      if (gr_geometry == CARTESIAN) then
        particle(vel)= -particle(vel)
@@ -166,10 +173,19 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
        ! flip the radial velocity using the subroutine below
        call reflect_velocity(particle(gr_ptPosx:gr_ptPosz),&
                              particle(gr_ptVelx:gr_ptVelz),&
-                             axis, vel_reflected)
+                             axis, face, vel_reflected)
        particle(gr_ptVelx:gr_ptVelz) = vel_reflected
+
+       ! Benny debugging
+!       if (axis == 2) then
+!         print *, "theta Bcrossing", face
+!         print *, "old pos", old_mcp_pos
+!         print *, "new pos", particle(gr_ptPosx:gr_ptPosz) 
+!         print *, "old vel", old_mcp_vel
+!         print *, "new vel", particle(gr_ptVelx:gr_ptVelz) 
+!       end if
      end if
-     
+
      if(predictor)then
         particle(posPred)= 2.0*corner(face)-particle(posPred)
         particle(velPred)= -particle(velPred)
@@ -187,7 +203,7 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
 end subroutine gr_ptOneFaceBC
 
 
-subroutine reflect_velocity(pos, vel, axis, vel_reflected)
+subroutine reflect_velocity(pos, vel, axis, face, vel_reflected)
 
   implicit none
 #include "constants.h"
@@ -195,7 +211,7 @@ subroutine reflect_velocity(pos, vel, axis, vel_reflected)
 
   ! Input/output
   real, dimension(MDIM), intent(in) :: pos, vel
-  integer, intent(in) :: axis
+  integer, intent(in) :: axis, face
   real, dimension(MDIM), intent(out) :: vel_reflected
 
   ! aux variables
@@ -232,17 +248,43 @@ subroutine reflect_velocity(pos, vel, axis, vel_reflected)
 
     sph_vel = (/ vr, vt, vp /)
 
+    ! Benny debugging
+    if ((face == 1) .and. (vt > 0.0)) then
+      print *, "wrong face 1"
+      print *, "pos1", pos
+      print *, "vel1", vel
+      print *, "wrongflip1", sph_vel 
+    end if
+    if ((face == 2) .and. (vt < 0.0)) then
+      print *, "wrong face 2"
+      print *, "pos2", pos
+      print *, "vel2", vel
+      print *, "wrongflip2", sph_vel 
+    end if
+
     sph_vel_reflected = sph_vel
     sph_vel_reflected(axis) = -sph_vel_reflected(axis)
+
+    ! Benny debugging
+!    if (axis == 2) then
+!      print *, "theta crossing", face
+!      print *, "flipping", sph_vel
+!      print *, "flipped", sph_vel_reflected
+!    end if
 
     ! Convert it back to Cartesian cooridinates
     x_hat = (/ 1.0d0, 0.0d0, 0.0d0 /)
     y_hat = (/ 0.0d0, 1.0d0, 0.0d0 /)
     z_hat = (/ 0.0d0, 0.0d0, 1.0d0 /)
 
-    vel_reflected(IAXIS) = dot_product(sph_vel_reflected, x_hat)
-    vel_reflected(JAXIS) = dot_product(sph_vel_reflected, y_hat)
-    vel_reflected(KAXIS) = dot_product(sph_vel_reflected, z_hat)
+    !vel_reflected(IAXIS) = dot_product(sph_vel_reflected, x_hat)
+    !vel_reflected(JAXIS) = dot_product(sph_vel_reflected, y_hat)
+    !vel_reflected(KAXIS) = dot_product(sph_vel_reflected, z_hat)
+
+    ! Convert velocity (vr, vt, vp) back to (vx, vy, vz)
+    vel_reflected = sph_vel_reflected(IAXIS)*r_hat +&
+                    sph_vel_reflected(JAXIS)*theta_hat +&
+                    sph_vel_reflected(KAXIS)*phi_hat
 
   else
     call Driver_abortFlash("reflect_velocity: &

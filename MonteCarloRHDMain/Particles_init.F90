@@ -119,6 +119,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_eff_scattering", pt_is_eff_scattering)
   call RuntimeParameters_get ("pt_maxnewnum", pt_maxnewnum)
   call RuntimeParameters_get ("pt_max_rt_iterations", pt_max_rt_iterations)
+  call RuntimeParameters_get ("pt_half_rt_timesteps", pt_half_rt_timesteps)
  
   call RuntimeParameters_get ("pt_initradfield_num", pt_initradfield_num)
 

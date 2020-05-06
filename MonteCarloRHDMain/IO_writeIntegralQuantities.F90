@@ -187,12 +187,24 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
 
 #ifdef ABSE_VAR
               ! thermal radiation energy absorbed
-              lsum(9) = lsum(9) + solnData(ABSE_VAR,i,j,k)*dvol
+              lsum(9) = lsum(9) + solnData(ABSE_VAR,i,j,k)*&
+                                  solnData(DENS_VAR,i,j,k)*dvol
+#endif
+#ifdef HEAT_VAR
+              ! thermal radiation energy absorbed
+              lsum(9) = lsum(9) + solnData(HEAT_VAR,i,j,k)*&
+                                  solnData(DENS_VAR,i,j,k)*dvol
 #endif
 
 #ifdef EMIE_VAR
               ! thermal radiation energy emitted
-              lsum(10) = lsum(10) + solnData(EMIE_VAR,i,j,k)*dvol
+              lsum(10) = lsum(10) + solnData(EMIE_VAR,i,j,k)*&
+                                    solnData(DENS_VAR,i,j,k)*dvol
+#endif
+#ifdef COOL_VAR
+              ! thermal radiation energy absorbed
+              lsum(10) = lsum(10) + solnData(COOL_VAR,i,j,k)*&
+                                    solnData(DENS_VAR,i,j,k)*dvol
 #endif
 
 #ifdef MAGP_VAR

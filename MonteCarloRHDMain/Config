@@ -45,6 +45,9 @@ PARAMETER pt_maxnewnum  INTEGER    10000
 D pt_max_rt_iterations    Maximum number of RT passes
 PARAMETER pt_max_rt_iterations   INTEGER 1000
 
+D pt_half_rt_timesteps    Whether or not to half the RT steps for the split Hydro solver
+PARAMETER pt_half_rt_timesteps   BOOLEAN FALSE
+
 D pt_es_alpha        alpha for the IMC fleck factor
 PARAMETER pt_es_alpha    REAL 1.0
 
