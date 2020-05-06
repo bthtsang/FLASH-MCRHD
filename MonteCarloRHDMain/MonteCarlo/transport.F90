@@ -16,7 +16,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Particles_interface, only : Particles_getGlobalNum
   use Particles_data, only : pt_typeInfo, pt_maxPerProc, pt_indexList,&
                              pt_indexCount, pt_meshMe, pt_numLocal
-  use Particles_data, only : pt_is_eff_scattering,&
+  use Particles_data, only : pt_is_eff_scattering, pt_max_rt_iterations,&
                              pt_is_scat_elastic, pt_is_escat_elastic,&
                              pt_is_scat_iso, pt_is_escat_iso,&
                              pt_STAY_ID, pt_SCAT_ID, pt_ESCAT_ID,&
@@ -284,12 +284,30 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !  print *, "xcellID", xcellID
         !end if
 
-        if (numpass > 1000) then
+        if (numpass > pt_max_rt_iterations) then
           print *, "many iterations...", mcp_fate, min_time, min_dist
-          print *, "ka/ks", k_a, k_s, fleck
-          print *, "temp", solnVec(TEMP_VAR, cellID(1), cellID(2), cellID(3))
+          print *, "current it", numpass, i
+          print *, "currentBlk", currentBlk
+          print *, "currentProc", currentProc
+          print *, "trem", particles(TREM_PART_PROP,i)
+          print *, "tag", particles(TAG_PART_PROP,i)
+          print *, "pos", particles(POSX_PART_PROP:POSZ_PART_PROP,i)
+          print *, "vel", particles(VELX_PART_PROP:VELZ_PART_PROP,i)
+          print *, "now cellID", cellID
+          print *, "target xcellID", xcellID
+          !print *, "ka/ks", k_a, k_s, fleck
+          !print *, "k_ion", k_ion, fleckp
+          !print *, "nH1, N_H1", nH1, N_H1
+          !print *, "dvol", dvol
+          !print *, "rho", solnVec(DENS_VAR, cellID(1), cellID(2), cellID(3))
+          !print *, "temp", solnVec(TEMP_VAR, cellID(1), cellID(2), cellID(3))
 
-          call Driver_abortFlash("Too many RT subcycles! Aborted.")
+
+          call get_spherical_velocity(particles(POSX_PART_PROP:POSZ_PART_PROP,i),&
+                                      particles(VELX_PART_PROP:VELZ_PART_PROP,i),&
+                                      sph_vel)
+          print *, "sph vel", sph_vel
+          !call Driver_abortFlash("Too many RT subcycles! Aborted.")
         end if
 
         ! Perform actions according to mcp_fate
@@ -455,7 +473,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             !print *, "newcell", new_cellID
             crossproc_tag = int(particles(TAG_PART_PROP,i))
 
-
             is_crossproc = .false.
             if (isoutside) then
               call gr_findNeghID(currentBlk, newPos, neghdir, neghID)
@@ -570,6 +587,23 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             !print *, "cross_cell", cellID
 
             is_crossed = all((new_cellID == xcellID), 1)
+
+            if (numpass > pt_max_rt_iterations) then
+              print *, "CROSSB", numpass, i
+              print *, "new_cellID", new_cellID
+              print *, "new proc", particles(PROC_PART_PROP, i)
+              print *, "new blk", particles(BLK_PART_PROP, i)
+              print *, "pos_before_adv", pos_before_adv
+              print *, "pos_after_adv", pos_after_adv
+              print *, "pos_after_push", pos_after_push
+              print *, "pos_after_period", pos_after_period
+              print *, "pos_for_negh", pos_for_negh
+              print *, "actualPos", particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+              print *, "actualVel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
+              print *, "is_crossProc", is_crossproc
+              print *, "isoutside", isoutside
+              print *, "neghdir", neghdir
+            end if
         
             if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
             !if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
@@ -578,6 +612,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               print *, "Current cell", new_cellID
               print *, "Old position", currentPos
               print *, "Current position", newPos
+              print *, ">pos_before_adv", pos_before_adv
+              print *, ">pos_after_adv", pos_after_adv
+              print *, ">pos_after_push", pos_after_push
+              print *, ">pos_after_period", pos_after_period
+              print *, ">pos_for_negh", pos_for_negh
               print *, "outside?", isoutside
               print *, "neghDir", neghDir
               print *, "procID", neghID(PROCNO), currentProc, particles(PROC_PART_PROP, i)
@@ -702,11 +741,13 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
     if (pt_meshMe .EQ. 0) call progress(frac_done)
 
     numpass = numpass + 1
+
   end do ! while loop for all particles are done
   deallocate(num_done_list)
 
   if (pt_meshMe == 0) then
     print *, "RT Finished in", numpass, "subcycles."
+    print *, "RT time step", dtNew
   end if
 
   ! Marking MCPs to be removed if marked 'absorbed'.
@@ -802,6 +843,7 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   end if
 
   ! Sample distances to scattering and absorption
+  ! d_i = (d_stay, d_coll, d_boundary, d_absorption)
   call calc_distance_to_collision(k_s_sample, d_i(2))
   !call calc_distance_to_absorption(k_a_sample, ini_weight, now_weight, d_i(4))
   call calc_distance_to_absorption_with_ionization(k_a_sample, N_H1,&
@@ -1109,6 +1151,7 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   do ii = IAXIS, KAXIS
     if (delta_cellID(ii) == 1) then
       now_pos(ii) = now_pos(ii) + deltaCell(ii)*pt_smlpush
+
       ! Sanitize the phi direction in case of periodic BCs.
       if (ii == KAXIS) then
         if ((gr_geometry == SPHERICAL) .and.&
@@ -1405,6 +1448,7 @@ end subroutine
 subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
                                            particle, d_cart, cart_dir)
   use Simulation_data, only : clight
+  use Particles_data, only : pt_smlpush
   use Driver_interface, only : Driver_abortFlash
   implicit none
 #include "constants.h"
@@ -1423,6 +1467,7 @@ subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
   real :: dx, xp, x_inner, x_outer, min_time
   integer :: id, ii
   real, dimension(2) :: soln
+  real :: pos_expected
 
   ! Getting MCP position
   pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
@@ -1458,6 +1503,38 @@ subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
   end if
 
   if ((cart_dir /= 1) .and. (cart_dir /= -1)) then
+    !print *, "MCP on-boundary along axis", axis
+    !print *, "pos/vel", pos(axis), vel(axis)
+    !print *, "soln", soln
+    !call Driver_abortFlash("calc_dist_to_cartesian_wall: unknown cart_dir.")
+
+    ! Go through soln for zeros
+    ! Offer a small fraction of cell crossing time
+    print *, "Try resolving on-boundary MCP"
+    do ii = 1, 2
+      if (soln(ii) == 0.0) then
+        min_time = pt_smlpush*deltaCell(axis)/abs(vel(axis))
+        pos_expected = pos(axis) + vel(axis)*min_time
+        if (vel(axis) > 0.0) then
+          cart_dir = 1
+        else if (vel(axis) < 0.0) then
+          cart_dir = -1
+        end if
+
+        print *, "MCP on-boundary along axis", axis
+        print *, "pos/vel", pos(axis), vel(axis)
+        print *, "soln", soln
+        print *, "Proposed cart_dir", cart_dir
+        print *, "Proposed min_time", min_time
+        print *, "Next expected position =", pos_expected
+      end if
+    end do
+  end if
+
+  ! Second check
+  if ((cart_dir /= 1) .and. (cart_dir /= -1)) then
+    print *, "MCP on-boundary along axis", axis
+    print *, "pos/vel", pos(axis), vel(axis)
     print *, "soln", soln
     call Driver_abortFlash("calc_dist_to_cartesian_wall: unknown cart_dir.")
   end if

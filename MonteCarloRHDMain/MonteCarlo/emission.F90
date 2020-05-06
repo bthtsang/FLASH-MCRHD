@@ -336,7 +336,8 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   use Particles_data, only : pt_maxnewnum, pt_PointEmission, pt_PointPulse,&
                              pt_PointPulseErad,&
                              pt_PointLuminosity, pt_PointSrcPosOffset,&
-                             pt_num_pmcps_tstep, pt_meshMe
+                             pt_num_pmcps_tstep, pt_meshMe,&
+                             originblkID, originprocID
   use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos,&
                              Grid_getListOfBlocks
   use Paramesh_comm_data, only : amr_mpi_meshComm
@@ -364,7 +365,6 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   integer :: numofblks
   real, dimension(LOW:HIGH, MDIM) :: bndBox
   real, dimension(MDIM) :: deltaCell, newxyz, newvel
-  integer :: originblkID, originprocID
   integer, dimension(MDIM) :: cellID
   real, dimension(MDIM) :: origin
   real :: dE, weight_per_mcp, dE_per_mcp, dtNow, newenergy
@@ -416,7 +416,10 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   end do
 
   ! Find out which block the origin resides on
-  call Grid_getBlkIDFromPos(origin, originblkID, originprocID, amr_mpi_meshComm)
+  ! This call involves MPI_AllReduce, only call in the first call
+  if (num_of_calls == 1) then
+    call Grid_getBlkIDFromPos(origin, originblkID, originprocID, amr_mpi_meshComm)
+  end if
   ! Print point source location in first call by host processor
   if ((pt_meshMe == originprocID) .and. (num_of_calls == 1)) then
     print *, "Point source hosted by processor", originprocID
@@ -515,6 +518,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   integer, dimension(MDIM) :: cellID
   real :: weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
+  real :: v_r
 
   ! Initialization
   now_num = 0
@@ -545,11 +549,11 @@ subroutine face_emission(blockID, solnVec, dtNew,&
     isEmits(pt_FaceEmissionSide, pt_FaceEmissionAxis) = .true.
 
     ! Abort if not emitting from inner radial face
-    if ((pt_FaceEmissionSide /= IAXIS) .or. (pt_FaceEmissionAxis /= 1)) then
-      call Driver_abortFlash("face_emission: non-radial face emission&
-                              not yet implemented.&
-                              Check pt_FaceEmissionSide's value.")
-    end if
+!    if ((pt_FaceEmissionSide /= IAXIS) .or. (pt_FaceEmissionAxis /= 1)) then
+!      call Driver_abortFlash("face_emission: non-radial face emission&
+!                              not yet implemented.&
+!                              Check pt_FaceEmissionSide's value.")
+!    end if
   end if
 
   do ii = LOW, HIGH
@@ -602,8 +606,23 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           end if
 
           ! Make sure the direction is pointing into the domain
-          if (ii == LOW)  newvel(jj) = abs(newvel(jj))
-          if (ii == HIGH) newvel(jj) = -abs(newvel(jj))
+          ! Mind you, newvel is in form of (vx,vy,vz), not spherical polar
+          if (gr_geometry == CARTESIAN) then
+            if (ii == LOW)  newvel(jj) =  abs(newvel(jj))
+            if (ii == HIGH) newvel(jj) = -abs(newvel(jj))
+          else if (gr_geometry == SPHERICAL) then
+            ! make sure v_r is positive
+            call get_cartesian_position(newxyz, cart_pos)
+            r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
+            v_r = dot_product(newvel, r_hat)
+            if (((v_r < 0.0) .and. (ii == LOW)) .or.&
+               ((v_r > 0.0) .and. (ii == HIGH))) then
+              call Driver_abortFlash("face_emission: inconsistent velocity&
+                                      sampled in sph. coord., v_r not pointing&
+                                      into domain.")
+            end if
+          end if
+          ! For spherical coord., v = v_r r_hat
 
           call get_cellID(bndBox, deltaCell, newxyz, cellID)
 

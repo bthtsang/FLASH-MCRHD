@@ -68,7 +68,7 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
 
   ! Extract MCP and gas (cell) velocity
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
-  v_gas = solnVec(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS), VELX_VAR:VELZ_VAR)
+  v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   ! Extract MCP's position and time
   t_mcp = particle(TREM_PART_PROP)
