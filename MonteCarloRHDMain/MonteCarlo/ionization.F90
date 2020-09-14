@@ -30,6 +30,7 @@ subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH1)
   nH1 = 1.0d0
   if (.not. pt_is_photoionization) return 
 
+#ifdef FLASH_MCRHD_IONIZATION
 #ifdef FLASH_MULTISPECIES
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
   temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
@@ -48,6 +49,7 @@ subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH1)
     call Driver_abortFlash("calc_pi_opac: multispecies is not defined &
                             but photoionization opacity is requested! Aborting.")
   end if 
+#endif
 #endif
 
 end subroutine calc_pi_opac
@@ -235,11 +237,14 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
         cooling_rate = 0.0
         if (nHp > pt_nH1_threshold) then
           if (pt_is_es_photoionization) then
-            recomb_rate = (gamma_n - 1.0)*nH1& 
-                        + gamma_n*(nH*nH - nH1*nH1)*alpha_B*dtnow&
-                        - gamma_n*nH1*nH1*k_coll*dtnow
+            !recomb_rate = (gamma_n - 1.0)*nH1& 
+            !            + gamma_n*(nH*nH - nH1*nH1)*alpha_B*dtnow&
+            !            - gamma_n*nH1*nH1*k_coll*dtnow
+            recomb_rate = gamma_n*(nH - nH1)**2*alpha_B*dtnow
           else ! non implicit approach
             recomb_rate = alpha_B*nHp*nHp ! number/cm^3/s
+            !recomb_rate = (nH*nH - nH1*nH1)*alpha_B&
+            !            - nH1*nH1*k_coll
             ! Convert to change in mass fraction (dimensionless)
             recomb_rate = recomb_rate*dtnow ! number/cm^3
           end if
@@ -295,7 +300,8 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
                                         fleckp, k_ion, dvol,&
                                         is_empty_cell_event)
   use Simulation_data, only : clight, mH, ev2erg
-  use Particles_data, only : pt_is_photoionization, pt_ABS_ID
+  use Particles_data, only : pt_is_photoionization, pt_ABS_ID,&
+                             pt_is_corrdl
   use Multispecies_interface, only : Multispecies_getProperty
   use rhd, only : cellAddVar
   implicit none
@@ -313,13 +319,15 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
 
   ! aux variables
   integer :: i, j, k
-  real :: rho, Ae
+  real :: rho, Ae, Ah1, nH1
   real :: k_ea_ion, nump_init, nump_old, nump_new
-  real :: energy, d_trav, old_h1
+  real :: energy, d_trav, old_h1, old_hp, old_ele
   real :: delta_n_ion, delta_e_ion
+  real :: dtau, dl_corr
 
   if (.not. pt_is_photoionization) return
 
+#ifdef FLASH_MCRHD_IONIZATION
 #ifdef FLASH_MULTISPECIES
   call Multispecies_getProperty(ELE_SPEC, A, Ae)
   i = cellID(IAXIS)
@@ -334,8 +342,19 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   energy = particle(ENER_PART_PROP)
   rho = solnVec(DENS_VAR, i, j, k)
   old_h1 = solnVec(H1_SPEC, i, j, k)
+  old_hp = solnVec(HP_SPEC, i, j, k)
+  old_ele = solnVec(ELE_SPEC, i, j, k)
 
   nump_new = nump_old*exp(-k_ea_ion*d_trav) 
+
+  ! Correction for absorption during the integrated path 
+  dl_corr = 1.0d0
+  dtau = k_ea_ion*d_trav  ! original tau without correction
+  if (pt_is_corrdl .and. (dtau > 2.0)) then
+    dl_corr = (1.0d0 - exp(-dtau)) / dtau
+    nump_new = nump_old*dl_corr
+  end if
+
   if ((mcp_fate == pt_ABS_ID) .and. (.not. is_empty_cell_event)) then
     nump_new = 0.0d0
   end if
@@ -366,6 +385,21 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   if ((solnVec(H1_SPEC, i, j, k) < 0.0) .or.&
       (solnVec(HP_SPEC, i, j, k) < 0.0) .or.&
       (solnVec(ELE_SPEC, i, j, k) < 0.0)) then
+    print *, "Abundances:"
+    print *, "mcp_fate", mcp_fate
+    print *, "H1", old_h1, solnVec(H1_SPEC, i, j, k)
+    print *, "HP", old_hp, solnVec(HP_SPEC, i, j, k)
+    print *, "ELE", old_ele, solnVec(ELE_SPEC, i, j, k)
+    print *, "delta_n_ion", delta_n_ion
+    print *, "k_ea_ion", k_ea_ion, fleckp
+    print *, "d_trav", d_trav
+    print *, "numps", nump_init, nump_old, nump_new
+    print *, "is_empty_cell?", is_empty_cell_event
+    call Multispecies_getProperty(H1_SPEC, A, Ah1)
+    nH1 = rho*old_h1/(Ah1*mH)
+    print *, "N_H1 (init)", nH1*dvol
+    print *, "dN", delta_n_ion*rho/mH*dvol
+
     call Driver_abortFlash("deposit_ionizing_rad: negative mass fraction!")
   end if
 
@@ -379,6 +413,14 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
 
   ! Update particle's weight info
   particle(NUMP_PART_PROP) = nump_new
+
+  if (nump_new < 0.0d0) then
+    print *, "negative mcp weight"
+    print *, "old_h1", old_h1
+    print *, "delta_n_ion/delta_e_ion", delta_n_ion, delta_e_ion
+    print *, "k_ea_ion*d_trav", k_ea_ion, d_trav
+  end if
+#endif
 #endif
 
 end subroutine deposit_ionizing_radiation
@@ -466,6 +508,7 @@ subroutine sanitize_fully_ionized_cell(cellID, solnVec)
 
   if (.not. pt_is_photoionization) return
 
+#ifdef FLASH_MCRHD_IONIZATION
 #ifdef FLASH_MULTISPECIES
   if (NSPECIES /= 0) then
     h1 = solnVec(H1_SPEC, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
@@ -479,6 +522,7 @@ subroutine sanitize_fully_ionized_cell(cellID, solnVec)
                             multispecies is not defined but ionization state&
                             sanitziation is requested! Aborting...")
   end if
+#endif
 #endif
 
 end subroutine sanitize_fully_ionized_cell
@@ -505,7 +549,8 @@ subroutine sanitize_mass_fraction(cellID, solnVec)
   j = cellID(JAXIS)
   k = cellID(KAXIS)
 
-#ifdef FLASH_MULTISPECIES 
+#ifdef FLASH_MCRHD_IONIZATION
+#ifdef FLASH_MULTISPECIES
   h1_frac = solnVec(H1_SPEC, i, j, k)
   hp_frac = solnVec(HP_SPEC, i, j, k)
 
@@ -527,6 +572,7 @@ subroutine sanitize_mass_fraction(cellID, solnVec)
   solnVec(H1_SPEC, i, j, k) = h1_frac
   solnVec(HP_SPEC, i, j, k) = hp_frac
   solnVec(ELE_SPEC, i, j, k) = hp_frac*Ae
+#endif
 #endif
   
 end subroutine sanitize_mass_fraction
