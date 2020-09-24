@@ -19,7 +19,7 @@ module random
   
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  function randold
+  function randold()
 
     implicit none
 
@@ -39,7 +39,7 @@ module random
   ! Added by Benny, include a pid argument
   ! From now 05102013 replaces the above rand(old) with the following rand
   ! After implementing: it seems all processors are referring to the same seed.
-  function rand
+  function rand()
 
     implicit none
 
@@ -64,7 +64,7 @@ module random
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  function randnozero
+  function randnozero()
 
     implicit none
 
