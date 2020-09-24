@@ -5,12 +5,9 @@ module transport
 
 
 subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
-  use Grid_interface, only : Grid_getSingleCellVol, Grid_getCellCoords,&
-                             Grid_getBlkBoundBox, Grid_getDeltas,&
-                             Grid_getBlkPtr, Grid_releaseBlkPtr,&
+  use Grid_interface, only : Grid_getDeltas,&
                              Grid_outsideBoundBox, Grid_getBlkType,&
-                             Grid_sortParticles, Grid_moveParticles,&
-                             Grid_getBlkIDFromPos ! Benny debugging
+                             Grid_sortParticles, Grid_moveParticles
   use Grid_data, only : gr_geometry
   use gr_interface, only : gr_findNeghID
   use Particles_interface, only : Particles_getGlobalNum
@@ -1117,8 +1114,10 @@ end subroutine advance_mcp
 subroutine sanitize_boundary_mcp(cellID, xcellID,&
                                  bndBox, deltaCell, particle)
   use Particles_data, only : pt_smlpush
-  use Grid_interface, only : Grid_getBlkBC
   use Grid_data, only: gr_geometry
+  use Grid_iterator, ONLY : Grid_iterator_t
+  use Grid_tile,        ONLY : Grid_tile_t
+
   implicit none
 #include "constants.h"
 #include "Flash.h"
@@ -1136,13 +1135,20 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   integer :: currentBlk, ii
   integer, dimension(2,MDIM) :: faces, onBoundary
 
+  ! variables for flash5 grid interface
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
   now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
   currentBlk = particle(BLK_PART_PROP)
 
   ! Check for periodic BC, for phi direction
-  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+  ! HACK - this is paramesh specific
+  itor%curBlk = currentBlk
+  call itor%currentTile(tileDesc)
+  call tileDesc%faceBCs(faces, onBoundary)
 
   delta_cellID = xcellID - cellID
 
@@ -1239,9 +1245,10 @@ end subroutine sanitize_boundary_mcp_wrong
 subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
                                  bndBox, deltaCell, particle)
   use Particles_data, only : pt_smlpush
-  use Grid_interface, only : Grid_getBlkBC
   use Grid_data, only: gr_geometry
   use Simulation_data, only : sim_zMin, sim_zMax
+  use Grid_iterator, ONLY : Grid_iterator_t
+  use Grid_tile,        ONLY : Grid_tile_t
   implicit none
 #include "constants.h"
 #include "Flash.h"
@@ -1260,13 +1267,20 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
   real:: zp
   integer, dimension(2,MDIM) :: faces, onBoundary
 
+  ! variables for flash5 grid interface
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
   now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
   currentBlk = particle(BLK_PART_PROP)
 
   ! Check for periodic BC, for phi direction
-  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+  ! HACK - this is paramesh specific
+  itor%curBlk = currentBlk
+  call itor%currentTile(tileDesc)
+  call tileDesc%faceBCs(faces, onBoundary)
 
   delta_cellID = xcellID - cellID
 
@@ -1319,11 +1333,12 @@ end subroutine sanitize_phi_periodic_BCs
 subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
                                  bndBox, deltaCell, particle)
   use Particles_data, only : pt_smlpush
-  use Grid_interface, only : Grid_getBlkBC
   use Grid_data, only: gr_geometry
   use Simulation_data, only : sim_xMin, sim_xMax,&
                               sim_yMin, sim_yMax,&
                               sim_zMin, sim_zMax
+  use Grid_iterator, ONLY : Grid_iterator_t
+  use Grid_tile,        ONLY : Grid_tile_t
   implicit none
 #include "constants.h"
 #include "Flash.h"
@@ -1343,13 +1358,20 @@ subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
   integer, dimension(2,MDIM) :: faces, onBoundary
   real, dimension(MDIM) :: domain_min, domain_max
 
+  ! variables for flash5 grid interface
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
   now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
   currentBlk = particle(BLK_PART_PROP)
 
   ! Check for periodic BC, for phi direction
-  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+  ! HACK - this is paramesh specific
+  itor%curBlk = currentBlk
+  call itor%currentTile(tileDesc)
+  call tileDesc%faceBCs(faces, onBoundary)
 
   delta_cellID = xcellID - cellID
 
