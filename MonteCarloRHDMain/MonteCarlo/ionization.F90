@@ -152,12 +152,13 @@ end subroutine calc_ionization_fleck
 
 ! Subroutine to populate recombination and the associated
 ! cooling rate. 
-subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
+subroutine calc_recomb_emissivity(tileDesc, solnVec, dtnow)
   use Particles_data, only : pt_is_photoionization, pt_is_coll_ionization,&
                              pt_is_es_photoionization,&
                              pt_is_apply_recombination,&
                              pt_nH1_threshold
-  use Grid_interface, only : Grid_getBlkIndexLimits 
+  use Grid_interface, only : Grid_getBlkIndexLimits
+  use Grid_tile, only : Grid_tile_t
   use Multispecies_interface, only : Multispecies_getProperty
   use Simulation_data, only : mH, ev2erg
   implicit none
@@ -166,7 +167,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
 #include "Flash.h"
 
   ! Input/Output
-  integer, intent(in) :: blkID
+  type(Grid_tile_t), intent(in) :: tileDesc
   real, pointer :: solnVec(:,:,:,:)
   real, intent(in) :: dtnow
 

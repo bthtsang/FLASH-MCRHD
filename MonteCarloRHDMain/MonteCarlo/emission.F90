@@ -10,8 +10,9 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
                              pt_meshMe, pt_typeInfo
   use Particles_interface, only : Particles_addNew 
   use Timers_interface, only : Timers_start, Timers_stop
-  use Grid_interface, only : Grid_getBlkPtr, Grid_getListOfBlocks,&
-                             Grid_releaseBlkPtr, Grid_sortParticles
+  use Grid_interface, only : Grid_sortParticles
+  use Grid_iterator, ONLY : Grid_iterator_t
+  use Grid_tile,        ONLY : Grid_tile_t
   use Driver_interface, only : Driver_abortFlash
   use ionization, only : calc_recomb_emissivity
   implicit none
@@ -45,9 +46,10 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   integer :: i_old_begin, i_old_end
   integer, dimension(MAXBLOCKS,NPART_TYPES) :: particlesPerBlk
 
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+  
   call Timers_start("MCP Emission")
-
-  call Grid_getListOfBlocks(LEAF, blkList, numofblks)
 
   ! Initializing new mcp arrays
   new_pos = 0.0d0
@@ -58,14 +60,16 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   new_num = 0
 
   ! Loop through leaf blocks
-  do b = 1, numofblks
-    call Grid_getBlkPtr(blkList(b), solnVec, CENTER)
+  call Grid_getTileIterator(itor, LEAF)
+  do while(itor%isValid())
+     call itor%currentTile(tileDesc)
+     call tileDesc%getDataPtr(solnVec, CENTER)
 
     ! Reset Monte Carlo tally variables
     call reset_deposition_var(solnVec)
 
     ! Thermal radiation
-    call thermal_emission(blkList(b), solnVec, dtNew,&
+    call thermal_emission(tileDesc, solnVec, dtNew,&
            num_thermal, now_pos, now_time, &
            now_energy, now_vel, now_weight)
     if (num_thermal .GT. 0) then
@@ -79,7 +83,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     end if
 
     ! Point emission
-    call point_emission(blkList(b), solnVec, dtNew,&
+    call point_emission(tileDesc, solnVec, dtNew,&
            num_point, now_pos, now_time, &
            now_energy, now_vel, now_weight)
     if (num_point .GT. 0) then
@@ -93,7 +97,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     end if
 
     ! Face emission
-    call face_emission(blkList(b), solnVec, dtNew,&
+    call face_emission(tileDesc, solnVec, dtNew,&
            num_face, now_pos, now_time, &
            now_energy, now_vel, now_weight)
     if (num_face .GT. 0) then
@@ -107,11 +111,14 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     end if
 
     ! Recombination emission
-    call calc_recomb_emissivity(blkList(b), solnVec, dtNew)
+    call calc_recomb_emissivity(tileDesc, solnVec, dtNew)
     ! Case B approximation, no MCP generation required
 
-    call Grid_releaseBlkPtr(blkList(b), solnVec)
+    ! release the data pointer and go to the next block
+    call tileDesc%releaseDataPtr(solnVec, CENTER)
+    call itor%next()
   end do
+  call Grid_releaseTileIterator(itor)
 
   ! Appending new MCPs to particles array, pt_numLocal updated
   old_pt_numLocal = pt_numLocal
@@ -169,14 +176,13 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 end subroutine emit_mcps
 
 
-subroutine thermal_emission(blockID, solnVec, dtNew,&
+subroutine thermal_emission(tileDesc, solnVec, dtNew,&
            now_num, now_pos, now_time, &
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
               pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
               pt_is_veldp, pt_marshak_eos
-  use Grid_interface, only : Grid_getBlkIndexLimits,&
-              Grid_getBlkBoundBox, Grid_getDeltas
+  use Grid_tile, only : Grid_tile_t
   use Simulation_data, only : R, sigma, a_rad
   use Eos_data, only : eos_singleSpeciesA
   use opacity, only : calc_abs_opac
@@ -191,7 +197,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 #include "constants.h"
 
   ! Input/Output
-  integer, intent(in) :: blockID
+  type(Grid_tile_t), intent(in) :: tileDesc
   real, pointer :: solnVec(:,:,:,:)
   real, intent(in) :: dtNew
   integer, intent(out) :: now_num
@@ -223,9 +229,10 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
   if (.not. pt_ThermalEmission) return
 
   ! Obtain block info
-  call Grid_getBlkIndexLimits(blockID, blkLimits, blkLimitsGC)
-  call Grid_getBlkBoundBox(blockID, bndBox)
-  call Grid_getDeltas(blockID, deltaCell) 
+  blkLimits = tileDesc%limits
+  blkLimitsGC = tileDesc%blkLimitsGC
+  call tileDesc%boundBox(bndBox)
+  call tileDesc%deltas(deltaCell)
 
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
@@ -233,7 +240,8 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
         cellID = (/ i, j, k /)
 
-        CALL Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
+        ! HACK - accessing tileDesc%id is paramesh-specific
+        CALL Grid_getSingleCellVol(tileDesc%id, EXTERIOR, cellID, dV)
 
         ! Obtaining grid info of current cell
         temp = solnVec(TEMP_VAR, i, j, k)
@@ -327,7 +335,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
 end subroutine thermal_emission
 
-subroutine point_emission(blockID, solnVec, dtNew,&
+subroutine point_emission(tileDesc, solnVec, dtNew,&
                           now_num, now_pos, now_time,&
                           now_energy, now_vel, now_weight)
   use Simulation_data, only : sim_xMax, sim_xMin,&
@@ -338,8 +346,8 @@ subroutine point_emission(blockID, solnVec, dtNew,&
                              pt_PointLuminosity, pt_PointSrcPosOffset,&
                              pt_num_pmcps_tstep, pt_meshMe,&
                              originblkID, originprocID
-  use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos,&
-                             Grid_getListOfBlocks
+  use Grid_interface, only : Grid_getBlkIDFromPos
+  use Grid_tile, only : Grid_tile_t
   use Paramesh_comm_data, only : amr_mpi_meshComm
   use new_mcp, only : sample_iso_velocity,&
                       sample_time, sample_energy
@@ -348,7 +356,7 @@ subroutine point_emission(blockID, solnVec, dtNew,&
 #include "constants.h"
 
   ! Input/Output
-  integer, intent(in) :: blockID
+  type(Grid_tile_t), intent(in) :: tileDesc
   real, pointer :: solnVec(:,:,:,:)
   real, intent(in) :: dtNew
   integer, intent(out) :: now_num
@@ -401,8 +409,8 @@ subroutine point_emission(blockID, solnVec, dtNew,&
 !  first_call = .false.
 
   ! Get local cell size
-  call Grid_getBlkBoundBox(blockID, bndBox)
-  call Grid_getDeltas(blockID, deltaCell)
+  call tileDesc%boundBox(bndBox)
+  call tileDesc%deltas(deltaCell)
 
   ! Define the origin of the simulation domain to be the center
   origin(1) = 0.5*(sim_xMax - sim_xMin)
@@ -428,7 +436,8 @@ subroutine point_emission(blockID, solnVec, dtNew,&
   end if
 
   ! Only emit if (blockID == block where the origin is)
-  if ((pt_meshMe == originprocID) .and. (blockID == originblkID)) then
+  ! HACK - accessing tileDesc%id is paramesh-specific
+  if ((pt_meshMe == originprocID) .and. (tileDesc%id == originblkID)) then
     if (pt_PointPulse) then
       dE = pt_PointPulseErad
     else ! continuous source
@@ -467,7 +476,7 @@ subroutine point_emission(blockID, solnVec, dtNew,&
 
 end subroutine point_emission
 
-subroutine face_emission(blockID, solnVec, dtNew,&
+subroutine face_emission(tileDesc, solnVec, dtNew,&
            now_num, now_pos, now_time,&
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_FaceEmission, pt_is_FacePlanck,&
@@ -476,9 +485,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_FacePlanckTemp, pt_constFaceFlux,&
                              pt_is_radial_face_vel, pt_is_iso_face_vel,&
                              pt_is_therm_face_vel, pt_smlpush
-  use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
-                             Grid_getBlkBC, Grid_getBlkPhysicalSize
   use Grid_data, only: gr_geometry
+  use Grid_tile, only : Grid_tile_t
   use Simulation_data, only : sigma, clight
   use Driver_interface, only : Driver_abortFlash
   use new_mcp, only : sample_blk_position, sample_iso_velocity,&
@@ -495,7 +503,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 #include "constants.h"
 
   ! Input/Output
-  integer, intent(in) :: blockID
+  type(Grid_tile_t), intent(in) :: tileDesc
   real, pointer :: solnVec(:,:,:,:)
   real, intent(in) :: dtNew
   integer, intent(out) :: now_num
@@ -538,10 +546,9 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   end if
 
   ! Obtain block info
-  call Grid_getBlkBoundBox(blockID, bndBox)
-  call Grid_getDeltas(blockID, deltaCell)
-
-  call Grid_getBlkBC(blockID, faces, onBoundary)
+  call tileDesc%boundBox(bndBox)
+  call tileDesc%deltas(deltaCell)
+  call tileDesc%faceBCs(faces, onBoundary)
 
   ! Activate the chosen face
   isEmits = .false.
