@@ -26,8 +26,9 @@ subroutine apply_rad_source_terms(dt)
                              pt_is_dynamically_coupled,&
                              pt_temp_floor, pt_is_apply_recombination,&
                              pt_marshak_eos
-  use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getListOfBlocks,&
-                             Grid_getBlkPtr, Grid_releaseBlkPtr
+  use Grid_interface, only : Grid_getBlkIndexLimits
+  use Grid_iterator, ONLY : Grid_iterator_t
+  use Grid_tile,        ONLY : Grid_tile_t
   use Eos_interface, only : Eos_wrapped
   use Simulation_data, only : a_rad
   use Multispecies_interface, only : Multispecies_getProperty
@@ -41,8 +42,9 @@ subroutine apply_rad_source_terms(dt)
 
   ! aux variables
   integer, dimension(MAXBLOCKS) :: blkList
-  integer :: numofblks, blockID
-  integer :: b, i, j, k
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+  integer :: i, j, k
   integer, dimension(2, MDIM) :: blkLimits, blkLimitsGC
   real, pointer :: solnVec(:,:,:,:)
   real :: Ae
@@ -53,16 +55,15 @@ subroutine apply_rad_source_terms(dt)
   ! Debug
   real :: oldtemp, oldeint, netheating, oldele
 
-  ! Get the list of leaf blocks
-  call Grid_getListOfBlocks(LEAF, blkList, numofblks)
-
   ! Loop through leaf blocks on the current rank
-  do b = 1, numofblks
-    blockID = blkList(b)
+  call Grid_getTileIterator(itor, LEAF)
+  do while(itor%isValid())
+    call itor%currentTile(tileDesc)
+    call tileDesc%getDataPtr(solnVec, CENTER)
 
     ! Get cell index limits
-    call Grid_getBlkIndexLimits(blockID, blkLimits, blkLimitsGC)
-    call Grid_getBlkPtr(blockID, solnVec, CENTER)
+    blkLimits = tileDesc%limits
+    blkLimitsGC = tileDesc%grownLimits
 
     do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
       do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
@@ -123,7 +124,7 @@ subroutine apply_rad_source_terms(dt)
             EoscellID(:, IAXIS) = i
             EoscellID(:, JAXIS) = j
             EoscellID(:, KAXIS) = k
-            call Eos_wrapped(MODE_DENS_EI, EoscellID, blockID)
+            call Eos_wrapped(MODE_DENS_EI, EoscellID, solnVec, CENTER)
 
             temp = solnVec(TEMP_VAR,i,j,k)
             eint = solnVec(EINT_VAR,i,j,k)
@@ -179,7 +180,7 @@ subroutine apply_rad_source_terms(dt)
     end do
 
     ! Update cell temperature after applying the source terms
-    call Eos_wrapped(MODE_DENS_EI, blkLimits, blockID)
+    call Eos_wrapped(MODE_DENS_EI, blkLimits, solnVec, CENTER)
 
     ! Impose temperature floor
     if (pt_temp_floor > 0.0) then
@@ -205,7 +206,7 @@ subroutine apply_rad_source_terms(dt)
                 solnVec(TEMP_VAR,i,j,k) = pt_temp_floor
 
                 ! Override with the new temperature
-                call Eos_wrapped(MODE_DENS_TEMP, EoscellID, blockID)
+                call Eos_wrapped(MODE_DENS_TEMP, EoscellID, solnVec, CENTER)
 
                 if (pt_marshak_eos) then
                   call Driver_abortFlash("rhd: eint modified by temp. floor but&
@@ -237,7 +238,7 @@ subroutine apply_rad_source_terms(dt)
       end do
     end if
 
-    call Grid_releaseBlkPtr(blockID, solnVec)
+    call Grid_releaseTileIterator(itor)
   end do
 
 
