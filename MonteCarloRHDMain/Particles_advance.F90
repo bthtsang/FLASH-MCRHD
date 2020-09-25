@@ -41,7 +41,7 @@ subroutine Particles_advance (dtOld,dtNew)
        pt_reduceGcellFills
   use Driver_interface, ONLY : Driver_abortFlash
 
-  use pt_interface, ONLY: pt_advancePassive, pt_advanceActive,  pt_updateTypeDS
+  use pt_interface, ONLY: pt_advancePassive, pt_updateTypeDS
   use Grid_interface, ONLY : Grid_moveParticles, Grid_fillGuardCells, &
                              Grid_mapMeshToParticles, Grid_sortParticles
   use Particles_interface, ONLY: Particles_sinkMoveParticles, Particles_sinkSortParticles, &
