@@ -237,9 +237,9 @@ subroutine apply_rad_source_terms(dt)
         end do
       end do
     end if
-
-    call Grid_releaseTileIterator(itor)
+    call tileDesc%releaseDataPtr(solnVec, CENTER)
   end do
+  call Grid_releaseTileIterator(itor)
 
 
 end subroutine apply_rad_source_terms

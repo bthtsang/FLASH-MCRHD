@@ -240,6 +240,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
            enddo
         enddo
      enddo
+     call tileDesc%releaseDataPtr(solnData, CENTER)
      deallocate(cellVolumes)
      
 #ifdef PHOTON_PART_TYPE
