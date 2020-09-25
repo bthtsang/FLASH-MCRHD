@@ -73,7 +73,6 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
   use Driver_interface, ONLY : Driver_abortFlash
 #ifdef FLASH_GRID_PARAMESH
   use tree, ONLY : lrefine
-  use Grid_data,ONLY : gr_nBlockX, gr_nBlockY, gr_nBlockZ
 #else
   use Grid_data,ONLY : gr_axisNumProcs
 #endif
