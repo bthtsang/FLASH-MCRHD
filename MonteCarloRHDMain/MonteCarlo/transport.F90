@@ -11,7 +11,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Grid_data, only : gr_geometry
   use Grid_tile, only : Grid_tile_t
   use Grid_iterator, ONLY : Grid_iterator_t
-  use gr_interface, only : gr_findNeghID
   use Particles_interface, only : Particles_getGlobalNum
   use Particles_data, only : pt_typeInfo, pt_maxPerProc, pt_indexList,&
                              pt_indexCount, pt_meshMe, pt_numLocal
@@ -482,7 +481,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
             is_crossproc = .false.
             if (isoutside) then
-              call gr_findNeghID(currentBlk, newPos, neghdir, neghID)
+              call Grid_getBlkIDFromPos(currentBlk, newPos, neghdir, neghID)
 
               if (neghID(PROCNO) /= currentProc) then
                 ! Make sure the phi values are legal for the new_cellID 
