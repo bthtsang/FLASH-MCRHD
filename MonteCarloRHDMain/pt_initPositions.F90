@@ -60,12 +60,11 @@
 !!***
 
 
-subroutine pt_initPositions (blockID,success)
+subroutine pt_initPositions (tileDesc,success)
   use Particles_data, only : pt_numLocal, pt_initradfield_num, pt_is_veldp,&
                              pt_maxPerProc, particles, pt_meshMe
-  use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
-                             Grid_getDeltas, Grid_getSingleCellVol,&
-                             Grid_getBlkPtr, Grid_releaseBlkPtr
+  use Grid_interface, only : Grid_getCellVolumes
+  use Grid_tile, only : Grid_tile_t
   use Simulation_data, only : a_rad
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
@@ -76,7 +75,7 @@ subroutine pt_initPositions (blockID,success)
 #include "constants.h"
 #include "Flash.h"
 
-  integer, INTENT(in) :: blockID
+  type(Grid_tile_t), INTENT(in) :: tileDesc
   logical,intent(OUT) :: success
 
   ! aux variables
@@ -89,7 +88,9 @@ subroutine pt_initPositions (blockID,success)
   integer :: ii, p, i, j, k
   real, dimension(MDIM) :: newxyz, newvel
   real :: newenergy, dshift
-
+  real, allocatable, dimension(:,:,:) :: cellVolumes
+  integer :: lo(MDIM), hi(MDIM)
+  
   ! Commenting out stub code
   !success = .true. ! DEV: returns true because this stub creates no particles,
                    ! therefore all of those zero particles were created successfully
@@ -107,14 +108,23 @@ subroutine pt_initPositions (blockID,success)
   ! Non-zero initial radiation field MCP number starts
 
   ! Gather cell indicies in current block
-  call Grid_getBlkIndexLimits(blockID, blkLimits, blkLimitsGC)
+  blkLimits = tileDesc%limits
+  blkLimitsGC = tileDesc%blkLimitsGC
 
   ! Get the grid geometry of this block
-  call Grid_getBlkBoundBox(blockID,bndBox)
-  call Grid_getDeltas(blockID, deltaCell)
+  call tileDesc%boundBox(bndBox)
+  call tileDesc%deltas(deltaCell)
+  lo(:) = blkLimits(LOW,:)
+  hi(:) = blkLimits(HIGH,:)
 
-  call Grid_getBlkPtr(blockID, solnVec, CENTER)
+  ! get pointer to solution data
+  call tileDesc%getDataPtr(solnVec, CENTER)
 
+  ! get cell volumes
+  allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
+  call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
+  
+  
   ! Do the loop over cells
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     cellID(3) = k
@@ -125,7 +135,7 @@ subroutine pt_initPositions (blockID,success)
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
         cellID(1) = i
 
-        call Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
+        dV = cellVolumes(i,j,k)
 
         Tgas = solnVec(TEMP_VAR, i, j, k)
         totalE = a_rad * (Tgas**4) * dV
@@ -143,7 +153,8 @@ subroutine pt_initPositions (blockID,success)
 
           ! initialize the particle
           ! Directly edit particles array
-          particles(BLK_PART_PROP,p) = real(blockID)
+          ! HACK - tileDesc%id is paramesh-specific
+          particles(BLK_PART_PROP,p) = real(tileDesc%id)
           particles(PROC_PART_PROP,p) = real(pt_meshMe)
 
           ! TREM should be -1.0 because it's an initial field
@@ -174,8 +185,8 @@ subroutine pt_initPositions (blockID,success)
       end do
     end do
   end do
-
-  call Grid_releaseBlkPtr(blockID, solnVec)
+  call tileDesc%releaseDataPtr(solnVec, CENTER)
+  deallocate(cellVolumes)
 
   ! Update final particle count
   pt_numLocal = p
