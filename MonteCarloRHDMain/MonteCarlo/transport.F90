@@ -9,6 +9,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                              Grid_outsideBoundBox, Grid_getBlkType,&
                              Grid_sortParticles, Grid_moveParticles
   use Grid_data, only : gr_geometry
+  use Grid_tile, only : Grid_tile_t
+  use Grid_iterator, ONLY : Grid_iterator_t
   use gr_interface, only : gr_findNeghID
   use Particles_interface, only : Particles_getGlobalNum
   use Particles_data, only : pt_typeInfo, pt_maxPerProc, pt_indexList,&
@@ -113,6 +115,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: crossproc_tag
   integer :: n_it_current
 
+  ! variables for flash5 grid interface
+  type(Grid_iterator_t) :: itor, newItor
+  type(Grid_tile_t)    :: tileDesc, newTileDesc
+
   ! Obtaining the global number of particles (MCPs and sinks)
   call Particles_getGlobalNum(globalNumParticles)
 
@@ -165,6 +171,12 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         currentBlk = int(particles(BLK_PART_PROP,i))
         currentProc = int(particles(PROC_PART_PROP,i))
 
+        ! Get block properties
+        ! HACK - this is paramesh specific
+        itor%curBlk = currentBlk
+        call itor%currentTile(tileDesc)
+        call tileDesc%getDataPtr(solnVec, CENTER)
+        
         currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
         if (gr_geometry == SPHERICAL) then
@@ -176,8 +188,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         or_hat = currentCartPos / sqrt(dot_product(currentCartPos, currentCartPos))
         on_hat = currentVel / clight
 
-        call Grid_getBlkBoundBox(currentBlk,bndBox)
-        call Grid_getDeltas(currentBlk,deltaCell)
+        call tileDesc%boundBox(bndBox)
+        call tileDesc%deltas(deltaCell)
 
         ! xyz here can be Cartesian or Spherical
         call Grid_getCellCoords(IAXIS, currentBlk, CENTER, .TRUE.,&
@@ -218,8 +230,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         end if
         
         call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
-
-        call Grid_getBlkPtr(currentBlk, solnVec, CENTER)
 
         ! Compute the dshift term for opacity calculation, 
         ! the particles array is not modified
@@ -485,8 +495,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 call Grid_getBlkType(neghID(BLKNO), blkType)
 
                 ! For checking the boundaries of the to-be new block
-                call Grid_getBlkBoundBox(neghID(BLKNO),new_bndBox)
-                call Grid_getDeltas(neghID(BLKNO),new_deltaCell)
+                newItor%curBlk = neghID(BLKNO)
+                call newItor%currentTile(newTileDesc)
+                call newTileDesc%boundBox(new_bndBox)
+                call newTileDesc%deltas(new_deltaCell)
 
                 ! Make sure the phi values are legal for the new_cellID 
                 call sanitize_phi_periodic_BCs(cellID, xcellID, &
@@ -689,7 +701,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !print *, "nn_hat", i, nr_hat
         !print *, "=================="
 
-
+        call tileDesc%releaseDataPtr(solnVec, CENTER)
       end do ! end of trem/iscp while loop for one MCP
 
       ! finished MCPs will not enter the above while loop,
