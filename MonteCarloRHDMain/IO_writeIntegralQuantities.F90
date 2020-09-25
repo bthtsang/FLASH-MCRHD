@@ -39,9 +39,9 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
 
   use IO_data, ONLY : io_restart, io_statsFileName, io_globalComm
   use Grid_interface, ONLY : Grid_getListOfBlocks, &
-    Grid_getBlkIndexLimits, Grid_getBlkPtr, Grid_getSingleCellVol, &
-    Grid_releaseBlkPtr
-
+    Grid_getBlkIndexLimits, Grid_getCellVolumes
+  use Grid_tile, ONLY : Grid_tile_t
+  use Grid_iterator, ONLY : Grid_iterator_t
    use IO_data, ONLY : io_globalMe, io_writeMscalarIntegrals
 
   use Particles_data, only : pt_typeInfo, particles, pt_meshMe
@@ -90,6 +90,11 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
   integer :: p_blk
   real    :: p_nump, p_ener
 
+  type(Grid_iterator_t) :: itor
+  type(Grid_tile_t)    :: tileDesc
+  real, allocatable, dimension(:,:,:) :: cellVolumes
+  integer :: lo(MDIM), hi(MDIM)
+  
   if (io_writeMscalarIntegrals) then
      nGlobalSumUsed = nGlobalSum
   else
@@ -100,15 +105,23 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
   gsum(1:nGlobalSumUsed) = 0.
   lsum(1:nGlobalSumUsed) = 0.
   
-  call Grid_getListOfBlocks(LEAF, blockList, count)
+  call Grid_getTileIterator(itor, LEAF)
+  do while(itor%isValid())
+     call itor%currentTile(tileDesc)
 
-  do lb = 1, count
      !get the index limits of the block
-     call Grid_getBlkIndexLimits(blockList(lb), blkLimits, blkLimitsGC)
+     blkLimits = tileDesc%limits
+     blkLimitsGC = tileDesc%blkLimitsGC
+     lo(:) = blkLimits(LOW,:)
+     hi(:) = blkLimits(HIGH,:)
 
      ! get a pointer to the current block of data
-     call Grid_getBlkPtr(blockList(lb), solnData)
+     call tileDesc%getDataPtr(solnData, CENTER)
 
+     ! get cell volumes
+     allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
+     call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
+     
      ! Sum contributions from the indicated blkLimits of cells.
      do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
         do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
@@ -118,8 +131,8 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
               point(JAXIS) = j
               point(KAXIS) = k
 
-!! Get the cell volume for a single cell
-              call Grid_getSingleCellVol(blockList(lb), EXTERIOR, point, dvol)
+              !! Get the cell volume for a single cell
+              dvol = cellVolumes(i,j,k)
      
               ! mass   
 #ifdef DENS_VAR
@@ -227,8 +240,8 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
            enddo
         enddo
      enddo
-     call Grid_releaseBlkPtr(blockList(lb), solnData)
-
+     deallocate(cellVolumes)
+     
 #ifdef PHOTON_PART_TYPE
      ! Added by Benny to track also total MCP radiation energy
      ! The pt_typeInfo data structure tracks the PART_LOCAL number, 
