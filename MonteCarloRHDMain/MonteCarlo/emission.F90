@@ -183,6 +183,7 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
               pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
               pt_is_veldp, pt_marshak_eos
   use Grid_tile, only : Grid_tile_t
+  use Grid_interface, only :  Grid_getCellVolumes
   use Simulation_data, only : R, sigma, a_rad
   use Eos_data, only : eos_singleSpeciesA
   use opacity, only : calc_abs_opac
@@ -218,6 +219,9 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
   real, dimension(NPART_PROPS) :: newparticle
   real :: dshift
 
+  real, allocatable, dimension(:,:,:) :: cellVolumes
+  integer :: lo(MDIM), hi(MDIM)
+
   ! Initialization
   now_num = 0
   now_pos = 0.0d0
@@ -233,6 +237,12 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
   blkLimitsGC = tileDesc%blkLimitsGC
   call tileDesc%boundBox(bndBox)
   call tileDesc%deltas(deltaCell)
+  lo(:) = blkLimits(LOW,:)
+  hi(:) = blkLimits(HIGH,:)
+  
+  ! get cell volumes
+  allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
+  call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
 
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
@@ -240,8 +250,7 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
 
         cellID = (/ i, j, k /)
 
-        ! HACK - accessing tileDesc%id is paramesh-specific
-        CALL Grid_getSingleCellVol(tileDesc%id, EXTERIOR, cellID, dV)
+        dV = cellVolumes(i,j,k)
 
         ! Obtaining grid info of current cell
         temp = solnVec(TEMP_VAR, i, j, k)
@@ -332,7 +341,8 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
       end do
     end do
   end do
-
+  deallocate(cellVolumes)
+  
 end subroutine thermal_emission
 
 subroutine point_emission(tileDesc, solnVec, dtNew,&
