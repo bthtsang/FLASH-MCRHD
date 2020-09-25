@@ -8,7 +8,7 @@ module emission
 subroutine emit_mcps(particles, p_count, dtNew, ind)
   use Particles_data, only : pt_maxPerProc, pt_maxnewnum, pt_numLocal,&
                              pt_meshMe, pt_typeInfo
-  use Particles_interface, only : Particles_addNew 
+  use Particles_interface, only : Particles_addNew
   use Timers_interface, only : Timers_start, Timers_stop
   use Grid_interface, only : Grid_sortParticles
   use Grid_iterator, ONLY : Grid_iterator_t
@@ -49,6 +49,9 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   type(Grid_iterator_t) :: itor
   type(Grid_tile_t)    :: tileDesc
   
+  ! saved attributes
+  logical, save :: first_call = .true.
+
   call Timers_start("MCP Emission")
 
   ! Initializing new mcp arrays
@@ -85,7 +88,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     ! Point emission
     call point_emission(tileDesc, solnVec, dtNew,&
            num_point, now_pos, now_time, &
-           now_energy, now_vel, now_weight)
+           now_energy, now_vel, now_weight, first_call)
     if (num_point .GT. 0) then
       new_pos(1:MDIM,new_num+1:new_num+num_point) = now_pos(1:MDIM,1:num_point)
       new_vel(1:MDIM,new_num+1:new_num+num_point) = now_vel(1:MDIM,1:num_point)
@@ -119,7 +122,8 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     call itor%next()
   end do
   call Grid_releaseTileIterator(itor)
-
+  first_call = .false.
+  
   ! Appending new MCPs to particles array, pt_numLocal updated
   old_pt_numLocal = pt_numLocal
   print *, "Rank", pt_meshMe, "receives", new_num, "new MCPs."
@@ -347,7 +351,7 @@ end subroutine thermal_emission
 
 subroutine point_emission(tileDesc, solnVec, dtNew,&
                           now_num, now_pos, now_time,&
-                          now_energy, now_vel, now_weight)
+                          now_energy, now_vel, now_weight, first_call)
   use Simulation_data, only : sim_xMax, sim_xMin,&
                               sim_yMax, sim_yMin,&
                               sim_zMax, sim_zMin
@@ -372,10 +376,7 @@ subroutine point_emission(tileDesc, solnVec, dtNew,&
   integer, intent(out) :: now_num
   real, dimension(MDIM,pt_maxnewnum), intent(out) :: now_pos, now_vel
   real, dimension(pt_maxnewnum), intent(out) :: now_time, now_energy, now_weight
-
-  ! saved attributes
-  logical, save :: first_call = .true.
-  integer, save :: num_of_calls = 0
+  logical, intent(in) :: first_call
 
   ! Aux variables
   integer :: ii
@@ -403,18 +404,6 @@ subroutine point_emission(tileDesc, solnVec, dtNew,&
     return
   end if
 
-  ! Actual execution of subroutine for this processor
-  ! increment number of calls
-  num_of_calls = num_of_calls + 1
-
-  ! Get the total number of leaf blocks
-  call Grid_getListOfBlocks(LEAF, blkList, numofblks)
-
-  ! Flag it as non-first_call when all leaf blocks are done
-  if (num_of_calls == numofblks) then
-    first_call = .false.
-  end if
-
 !  ! Actual call performed
 !  first_call = .false.
 
@@ -435,11 +424,11 @@ subroutine point_emission(tileDesc, solnVec, dtNew,&
 
   ! Find out which block the origin resides on
   ! This call involves MPI_AllReduce, only call in the first call
-  if (num_of_calls == 1) then
+  if (first_call) then
     call Grid_getBlkIDFromPos(origin, originblkID, originprocID, amr_mpi_meshComm)
   end if
   ! Print point source location in first call by host processor
-  if ((pt_meshMe == originprocID) .and. (num_of_calls == 1)) then
+  if ((pt_meshMe == originprocID) .and. (first_call)) then
     print *, "Point source hosted by processor", originprocID
     print *, "Point source block ID", originblkID
     print *, "Point source location", origin
