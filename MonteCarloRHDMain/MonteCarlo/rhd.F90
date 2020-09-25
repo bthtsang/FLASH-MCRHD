@@ -26,7 +26,8 @@ subroutine apply_rad_source_terms(dt)
                              pt_is_dynamically_coupled,&
                              pt_temp_floor, pt_is_apply_recombination,&
                              pt_marshak_eos
-  use Grid_interface, only : Grid_getBlkIndexLimits
+  use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getTileIterator,&
+                             Grid_releaseTileIterator
   use Grid_iterator, ONLY : Grid_iterator_t
   use Grid_tile,        ONLY : Grid_tile_t
   use Eos_interface, only : Eos_wrapped
@@ -46,7 +47,7 @@ subroutine apply_rad_source_terms(dt)
   type(Grid_tile_t)    :: tileDesc
   integer :: i, j, k
   integer, dimension(2, MDIM) :: blkLimits, blkLimitsGC
-  real, pointer :: solnVec(:,:,:,:)
+  real, pointer :: solnVec(:,:,:,:) => NULL()
   real :: Ae
   real :: ekin_old, ekin_new
   real :: dvxdt, dvydt, dvzdt
@@ -238,6 +239,7 @@ subroutine apply_rad_source_terms(dt)
       end do
     end if
     call tileDesc%releaseDataPtr(solnVec, CENTER)
+    call itor%next()
   end do
   call Grid_releaseTileIterator(itor)
 

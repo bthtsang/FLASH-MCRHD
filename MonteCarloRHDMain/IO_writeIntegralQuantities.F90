@@ -39,7 +39,8 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
 
   use IO_data, ONLY : io_restart, io_statsFileName, io_globalComm
   use Grid_interface, ONLY : Grid_getListOfBlocks, &
-    Grid_getBlkIndexLimits, Grid_getCellVolumes
+       Grid_getBlkIndexLimits, Grid_getCellVolumes, Grid_getTileIterator,&
+       Grid_releaseTileIterator
   use Grid_tile, ONLY : Grid_tile_t
   use Grid_iterator, ONLY : Grid_iterator_t
    use IO_data, ONLY : io_globalMe, io_writeMscalarIntegrals
@@ -80,7 +81,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
   integer :: ivar
   integer :: i, j, k
   real :: dvol             !, del(MDIM)
-  real, DIMENSION(:,:,:,:), POINTER :: solnData
+  real, DIMENSION(:,:,:,:), POINTER :: solnData => NULL()
 
   integer :: point(MDIM)
   integer :: ioStat
@@ -240,7 +241,6 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
            enddo
         enddo
      enddo
-     call tileDesc%releaseDataPtr(solnData, CENTER)
      deallocate(cellVolumes)
      
 #ifdef PHOTON_PART_TYPE
@@ -266,8 +266,10 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
      ! End E_MCPs summation
 #endif
 
+     call tileDesc%releaseDataPtr(solnData, CENTER)
+     call itor%next()
   enddo
-  
+  call Grid_releaseTileIterator(itor)
 
   
   ! Now the MASTER_PE sums the local contributions from all of

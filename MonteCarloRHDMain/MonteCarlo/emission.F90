@@ -10,7 +10,8 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
                              pt_meshMe, pt_typeInfo
   use Particles_interface, only : Particles_addNew
   use Timers_interface, only : Timers_start, Timers_stop
-  use Grid_interface, only : Grid_sortParticles
+  use Grid_interface, only : Grid_sortParticles, Grid_getTileIterator,&
+                             Grid_releaseTileIterator
   use Grid_iterator, ONLY : Grid_iterator_t
   use Grid_tile,        ONLY : Grid_tile_t
   use Driver_interface, only : Driver_abortFlash
@@ -29,7 +30,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   ! Other parameters
   integer, dimension(MAXBLOCKS) :: blkList
   integer :: numofblks
-  real, pointer :: solnVec(:,:,:,:)
+  real, pointer :: solnVec(:,:,:,:) => NULL()
 
   ! aux parameters
   integer :: b
