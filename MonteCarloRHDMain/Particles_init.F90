@@ -321,7 +321,7 @@ subroutine Particles_init ( restart)
 
   call pt_picInit()
   ! initialize sink particles
-  call Particles_sinkInit(restart)
+  !call Particles_sinkInit(restart)
   return
 
 end subroutine Particles_init

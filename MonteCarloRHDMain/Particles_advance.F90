@@ -44,9 +44,6 @@ subroutine Particles_advance (dtOld,dtNew)
   use pt_interface, ONLY: pt_advancePassive, pt_updateTypeDS
   use Grid_interface, ONLY : Grid_moveParticles, Grid_fillGuardCells, &
                              Grid_mapMeshToParticles, Grid_sortParticles
-  use Particles_interface, ONLY: Particles_sinkMoveParticles, Particles_sinkSortParticles, &
-                                 Particles_sinkAdvanceParticles, &
-                                 Particles_sinkCreateAccrete
   implicit none
 
 #include "constants.h"  
@@ -161,23 +158,6 @@ subroutine Particles_advance (dtOld,dtNew)
      end select
 
   end do
-
-  ! sink particle routines
-
-#ifdef DEBUG_PARTICLES
-  if (dr_globalMe .eq. MASTER_PE) print *, 'Particles_advance: entering sink routines.'
-#endif
-  ! advance sink particles based on velocity and acceleration
-  call Particles_sinkAdvanceParticles(dtNew)
-  ! check for creation and accretion
-  call Particles_sinkCreateAccrete(dtNew)
-  ! move sink particles to the right blocks/procs
-  call Particles_sinkMoveParticles(regrid)
-  ! sort sink particles
-  call Particles_sinkSortParticles()
-#ifdef DEBUG_PARTICLES
-  if (dr_globalMe .eq. MASTER_PE) print *, 'Particles_advance: done with sink routines.'
-#endif
 
 
 #ifdef DEBUG_PARTICLES
