@@ -257,7 +257,7 @@ subroutine IO_writeIntegralQuantities ( isFirst, simTime)
        p_blk = int(particles(BLK_PART_PROP, p))
 
        ! count for the current blkID
-       if (p_blk == blockList(lb)) then
+       if (p_blk == tileDesc%id) then
          p_nump = particles(NUMP_PART_PROP, p)
          p_ener = particles(ENER_PART_PROP, p)
          lsum(11) = lsum(11) + p_nump*p_ener
