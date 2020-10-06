@@ -213,7 +213,6 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
   ! aux parameters
   integer :: i, j, k, ii
   integer, dimension(MDIM) :: cellID
-  integer, dimension(2, MDIM) :: blkLimits, blkLimitsGC
   real, dimension(LOW:HIGH, MDIM) :: bndBox
   real, dimension(MDIM) :: deltaCell
   real :: dV, temp, rho, gamc, ka, kp, dE, dEMIE, c_V, beta, fn
@@ -238,20 +237,18 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
   if (.not. pt_ThermalEmission) return
 
   ! Obtain block info
-  blkLimits = tileDesc%limits
-  blkLimitsGC = tileDesc%blkLimitsGC
   call tileDesc%boundBox(bndBox)
   call tileDesc%deltas(deltaCell)
-  lo(:) = blkLimits(LOW,:)
-  hi(:) = blkLimits(HIGH,:)
+  lo(:) = tileDesc%limits(LOW,  :)
+  hi(:) = tileDesc%limits(HIGH, :)
   
   ! get cell volumes
   allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
   call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
 
-  do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
-    do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
-      do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
+  do k = lo(KAXIS), hi(KAXIS)
+    do j = lo(JAXIS), hi(JAXIS)
+      do i = lo(IAXIS), hi(IAXIS)
 
         cellID = (/ i, j, k /)
 
