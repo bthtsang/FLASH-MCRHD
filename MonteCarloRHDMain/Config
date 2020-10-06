@@ -7,6 +7,7 @@ EXCLUSIVE NonIonizingRad IonizingRad
 REQUIRES ./MonteCarlo  # subroutines for MCP transport
 REQUIRES Particles/ParticlesMain
 REQUIRES IO/IOParticles/hdf5/serial
+#REQUIRES Grid/GridMain/AMR/Paramesh4/bittree
 
 
 ### Define the radiation particle class
