@@ -7,7 +7,8 @@ module transport
 subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Grid_interface, only : Grid_getDeltas,&
                              Grid_outsideBoundBox, Grid_getBlkType,&
-                             Grid_sortParticles, Grid_moveParticles
+                             Grid_sortParticles, Grid_moveParticles,&
+                             Grid_getBlkIDFromPos
   use Grid_data, only : gr_geometry
   use Grid_tile, only : Grid_tile_t
   use Grid_iterator, ONLY : Grid_iterator_t
@@ -67,13 +68,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real, dimension(LOW:HIGH, MDIM) :: bndBox
   real, dimension(MDIM) :: deltaCell
 
-  integer, parameter :: ycoordsize = NYB + 2*NGUARD
-  real, dimension(ycoordsize) :: ycoords
-  integer, parameter :: xcoordsize = NXB + 2*NGUARD
-  real, dimension(xcoordsize) :: xcoords
-  integer, parameter :: zcoordsize = NZB + 2*NGUARD
-  real, dimension(zcoordsize) :: zcoords
-
   real :: dt
   real, pointer, dimension(:,:,:,:) :: solnVec
   real :: k_a, k_s
@@ -117,6 +111,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   ! variables for flash5 grid interface
   type(Grid_iterator_t) :: itor, newItor
   type(Grid_tile_t)    :: tileDesc, newTileDesc
+  integer :: lo(1:MDIM)
+  integer :: hi(1:MDIM)
+  real, allocatable :: cellVolumes(:,:,:)
 
   ! Obtaining the global number of particles (MCPs and sinks)
   call Particles_getGlobalNum(globalNumParticles)
@@ -175,6 +172,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         itor%curBlk = currentBlk
         call itor%currentTile(tileDesc)
         call tileDesc%getDataPtr(solnVec, CENTER)
+
+        lo(:) = tileDesc%limits(LOW,  :)
+        hi(:) = tileDesc%limits(HIGH, :)
         
         currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
@@ -189,20 +189,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         call tileDesc%boundBox(bndBox)
         call tileDesc%deltas(deltaCell)
-
-        ! xyz here can be Cartesian or Spherical
-        call Grid_getCellCoords(IAXIS, currentBlk, CENTER, .TRUE.,&
-                                xcoords, xcoordsize)
-
-        if (NDIM > 1) then
-          call Grid_getCellCoords(JAXIS, currentBlk, CENTER, .TRUE.,&
-                                  ycoords, ycoordsize)
-
-          if (NDIM > 2) then
-            call Grid_getCellCoords(KAXIS, currentBlk, CENTER, .TRUE.,&
-                                    zcoords, zcoordsize)
-          end if
-        end if
 
         call get_cellID(bndBox, deltaCell, currentPos, cellID)
         n_it_current = n_it_current + 1
@@ -228,7 +214,15 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
           print *, "NumIter.", n_it_current
         end if
         
-        call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
+        allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
+                             lo(JAXIS):hi(JAXIS), &
+                             lo(KAXIS):hi(KAXIS)))
+        call Grid_getCellVolumes(tileDesc%level, &
+                              lo, hi, &
+                              cellVolumes)
+
+        dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+        !call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
         ! Compute the dshift term for opacity calculation, 
         ! the particles array is not modified
@@ -481,7 +475,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
             is_crossproc = .false.
             if (isoutside) then
-              call Grid_getBlkIDFromPos(currentBlk, newPos, neghdir, neghID)
+              !call Grid_getBlkIDFromPos(currentBlk, newPos, neghdir, neghID)
+              ! no comm needed if using BITTREE
+              call Grid_getBlkIDFromPos(newPos, neghID(BLKNO), neghID(PROCNO))
 
               if (neghID(PROCNO) /= currentProc) then
                 ! Make sure the phi values are legal for the new_cellID 
@@ -701,6 +697,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !print *, "=================="
 
         call tileDesc%releaseDataPtr(solnVec, CENTER)
+
+        deallocate(cellVolumes)
       end do ! end of trem/iscp while loop for one MCP
 
       ! finished MCPs will not enter the above while loop,
@@ -918,12 +916,12 @@ subroutine get_cellID(bndBox, deltaCell, pos, cellID)
   ! This works for both Cartesian and Spherical coord. 
   dx_block_i = 1.0/deltaCell(1)
   xp = (pos(IAXIS) - bndBox(LOW,IAXIS)) * dx_block_i
-  ip = floor(xp) + 1 + NGUARD 
+  ip = floor(xp) + 1
 
   if (NDIM >= 2) then
     dy_block_i = 1.0/deltaCell(2)
     yp = (pos(JAXIS) - bndBox(LOW,JAXIS)) * dy_block_i
-    jp = floor(yp) + 1 + NGUARD
+    jp = floor(yp) + 1
   else
     jp = 1
   endif
@@ -931,7 +929,7 @@ subroutine get_cellID(bndBox, deltaCell, pos, cellID)
   if (NDIM == 3) then
     dz_block_i = 1.0/deltaCell(3)
     zp = (pos(KAXIS) - bndBox(LOW,KAXIS)) * dz_block_i
-    kp = floor(zp) + 1 + NGUARD
+    kp = floor(zp) + 1
   else
     kp = 1
   endif
