@@ -57,12 +57,12 @@ subroutine sample_cell_position(bndBox, deltaCell, cellID, newxyz)
 
   else if (gr_geometry == CARTESIAN) then
 
-    newxyz(IAXIS) = bndBox(LOW, IAXIS) + (cellID(IAXIS) - NGUARD - 1 + rand()) * deltaCell(IAXIS)
+    newxyz(IAXIS) = bndBox(LOW, IAXIS) + rand() * deltaCell(IAXIS)
     if (NDIM >= 2) then
-      newxyz(JAXIS) = bndBox(LOW, JAXIS) + (cellID(JAXIS) - NGUARD - 1 + rand()) * deltaCell(JAXIS)
+      newxyz(JAXIS) = bndBox(LOW, JAXIS) + rand() * deltaCell(JAXIS)
 
       if (NDIM == 3) then
-        newxyz(KAXIS) = bndBox(LOW, KAXIS) + (cellID(KAXIS) - NGUARD - 1 + rand()) * deltaCell(KAXIS)
+        newxyz(KAXIS) = bndBox(LOW, KAXIS) + rand() * deltaCell(KAXIS)
       end if
     end if
 
