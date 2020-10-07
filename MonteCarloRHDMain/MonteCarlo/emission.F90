@@ -225,6 +225,8 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
 
   real, allocatable, dimension(:,:,:) :: cellVolumes
   integer :: lo(MDIM), hi(MDIM)
+  integer :: icid(MDIM)
+  integer, dimension(MDIM) :: local_cellID
 
   ! Initialization
   now_num = 0
@@ -241,7 +243,8 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
   call tileDesc%deltas(deltaCell)
   lo(:) = tileDesc%limits(LOW,  :)
   hi(:) = tileDesc%limits(HIGH, :)
-  
+  icid = tileDesc%cid
+
   ! get cell volumes
   allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
   call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
@@ -251,6 +254,9 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
       do i = lo(IAXIS), hi(IAXIS)
 
         cellID = (/ i, j, k /)
+        local_cellID = (/ i - icid(IAXIS) + 1,&
+                          j - icid(JAXIS) + 1,&
+                          k - icid(KAXIS) + 1 /)
 
         dV = cellVolumes(i,j,k)
 
@@ -299,7 +305,7 @@ subroutine thermal_emission(tileDesc, solnVec, dtNew,&
           ! Loop to create new MCPs
           do ii = 1, pt_num_tmcps_tstep
 
-            call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
+            call sample_cell_position(bndBox, deltaCell, local_cellID, newxyz)
 
             call sample_time(dtNew, dtNow)
 
