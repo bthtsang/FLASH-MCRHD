@@ -8,7 +8,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Grid_interface, only : Grid_getDeltas,&
                              Grid_outsideBoundBox, Grid_getBlkType,&
                              Grid_sortParticles, Grid_moveParticles,&
-                             Grid_getBlkIDFromPos
+                             Grid_getBlkIDFromPos,&
+                             Grid_getTileIterator, Grid_releaseTileIterator
   use Grid_data, only : gr_geometry
   use Grid_tile, only : Grid_tile_t
   use Grid_iterator, ONLY : Grid_iterator_t
@@ -37,6 +38,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                          sanitize_fully_ionized_cell
   use relativity, only : compute_dshift
   use Simulation_data, only : clight
+  use gr_interface, only : gr_xyzToBlock
 
   implicit none
 
@@ -114,6 +116,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: lo(1:MDIM)
   integer :: hi(1:MDIM)
   real, allocatable :: cellVolumes(:,:,:)
+  integer :: icid(MDIM)
+  integer, dimension(MDIM) :: local_cellID
+  integer :: ansproc, ansblk
 
   ! Obtaining the global number of particles (MCPs and sinks)
   call Particles_getGlobalNum(globalNumParticles)
@@ -169,12 +174,26 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         ! Get block properties
         ! HACK - this is paramesh specific
-        itor%curBlk = currentBlk
-        call itor%currentTile(tileDesc)
+        call Grid_getTileIterator(itor, LEAF)
+        do while(itor%isValid())
+          call itor%currentTile(tileDesc)
+
+          if (tileDesc%id == currentBlk) then
+            exit
+          else
+            call itor%next()
+          end if
+        end do
+        call Grid_releaseTileIterator(itor)
+
+!        itor%curBlk = currentBlk
+!        call itor%currentTile(tileDesc)
+
         call tileDesc%getDataPtr(solnVec, CENTER)
 
         lo(:) = tileDesc%limits(LOW,  :)
         hi(:) = tileDesc%limits(HIGH, :)
+        icid  = tileDesc%cid
         
         currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
@@ -190,29 +209,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         call tileDesc%boundBox(bndBox)
         call tileDesc%deltas(deltaCell)
 
-        call get_cellID(bndBox, deltaCell, currentPos, cellID)
-        n_it_current = n_it_current + 1
-        if (((cellID(1) > 16) .or. (cellID(2) > 16) .or. (cellID(3) > 16)) .or.&
-            ((cellID(1) < 1) .or. (cellID(2) < 1) .or. (cellID(3) < 1))) then
-          print *, "wrong cellID", cellID
-          !call Grid_getBlkIDFromPos(currentPos, actualBlkID, actualprocID, amr_mpi_meshComm)
-          !print *, "ActualID", actualBlkID, actualprocID
+        call get_cellID(bndBox, deltaCell, currentPos, local_cellID)
+        ! adding to offset for FLASH5 indexing
+        cellID = local_cellID + icid - 1
 
-          print *, "causing pos", currentPos
-          print *, "previous fate", mcp_fate
-          print *, "is_crossproc", is_crossproc
-          print *, "currentBlk", currentBlk
-          print *, "currentProc", currentProc
-          print *, "bndBoxX", bndBox(:,1)
-          print *, "bndBoxY", bndBox(:,2)
-          print *, "bndBoxZ", bndBox(:,3)
-          print *, "deltas", deltaCell
-          print *, "nump", particles(NUMP_PART_PROP,i)
-          print *, "TAG", particles(TAG_PART_PROP,i)
-          print *, "crossproc_tag", crossproc_tag
-          print *, "TimeRemains", particles(TREM_PART_PROP,i)
-          print *, "NumIter.", n_it_current
-        end if
+        n_it_current = n_it_current + 1
         
         allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
                              lo(JAXIS):hi(JAXIS), &
@@ -270,7 +271,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
           print *, "fpbndBoxZ", bndBox(:,3)
         end if
 
-        call determine_fate(bndBox, deltaCell, particles(:, i), cellID,&
+        call determine_fate(bndBox, deltaCell, particles(:, i), local_cellID,&
                             k_a, k_s, fleck, k_ion, fleckp, N_H1,&
                             mcp_fate, xcellID, min_time, min_dist,&
                             is_empty_cell_event)
