@@ -174,20 +174,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         ! Get block properties
         ! HACK - this is paramesh specific
-        call Grid_getTileIterator(itor, LEAF)
-        do while(itor%isValid())
-          call itor%currentTile(tileDesc)
-
-          if (tileDesc%id == currentBlk) then
-            exit
-          else
-            call itor%next()
-          end if
-        end do
-        call Grid_releaseTileIterator(itor)
-
-!        itor%curBlk = currentBlk
-!        call itor%currentTile(tileDesc)
+        itor%curBlk = currentBlk
+        call itor%currentTile(tileDesc)
 
         call tileDesc%getDataPtr(solnVec, CENTER)
 
