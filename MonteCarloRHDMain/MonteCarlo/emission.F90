@@ -388,7 +388,7 @@ subroutine point_emission(tileDesc, solnVec, dtNew,&
   integer :: numofblks
   real, dimension(LOW:HIGH, MDIM) :: bndBox
   real, dimension(MDIM) :: deltaCell, newxyz, newvel
-  integer, dimension(MDIM) :: cellID
+  integer, dimension(MDIM) :: cellID, local_cellID
   real, dimension(MDIM) :: origin
   real :: dE, weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
@@ -461,7 +461,8 @@ subroutine point_emission(tileDesc, solnVec, dtNew,&
 
       ! Use cell information for sampling MCP frequency,
       ! constant eps in the gray case
-      call get_cellID(bndBox, deltaCell, newxyz, cellID)
+      call get_cellID(bndBox, deltaCell, newxyz, local_cellID)
+      cellID = local_cellID + tileDesc%cid - 1
       call sample_energy(solnVec, cellID, newenergy)
       weight_per_mcp = dE_per_mcp / newenergy
 
@@ -526,7 +527,7 @@ subroutine face_emission(tileDesc, solnVec, dtNew,&
   real, parameter :: eps_dummy = 1.0d-11
 
   real, dimension(MDIM) :: newxyz, newvel, cart_pos, r_hat
-  integer, dimension(MDIM) :: cellID
+  integer, dimension(MDIM) :: cellID, local_cellID
   real :: weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
   real :: v_r
@@ -634,8 +635,9 @@ subroutine face_emission(tileDesc, solnVec, dtNew,&
           end if
           ! For spherical coord., v = v_r r_hat
 
-          call get_cellID(bndBox, deltaCell, newxyz, cellID)
-
+          call get_cellID(bndBox, deltaCell, newxyz, local_cellID)
+          cellID = local_cellID + tileDesc%cid - 1
+          
           call sample_energy(solnVec, cellID, newenergy)
           weight_per_mcp = dE_per_mcp / newenergy
 
