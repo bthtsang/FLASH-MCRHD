@@ -114,8 +114,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   ! variables for flash5 grid interface
   type(Grid_iterator_t) :: itor, newItor
   type(Grid_tile_t)    :: tileDesc, newTileDesc
-  integer :: lo(1:MDIM)
-  integer :: hi(1:MDIM)
   real, allocatable :: cellVolumes(:,:,:)
   real :: cellVols(1:1, 1:1, 1:1)
   integer :: icid(MDIM)
@@ -181,11 +179,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         ! HACK - this is paramesh specific
         itor%curBlk = currentBlk
         call itor%currentTile(tileDesc)
-
         call tileDesc%getDataPtr(solnVec, CENTER)
-
-        lo(:) = tileDesc%limits(LOW,  :)
-        hi(:) = tileDesc%limits(HIGH, :)
         icid  = tileDesc%cid
         
         currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
