@@ -34,6 +34,7 @@ subroutine apply_rad_source_terms(dt)
   use Simulation_data, only : a_rad
   use Multispecies_interface, only : Multispecies_getProperty
   use Driver_interface, only : Driver_abortFlash
+  use Timers_interface, only : Timers_start, Timers_stop
 
   implicit none
 #include "Flash.h"
@@ -55,6 +56,8 @@ subroutine apply_rad_source_terms(dt)
   real :: temp, rho, eint, ekin, ener
   ! Debug
   real :: oldtemp, oldeint, netheating, oldele
+
+  call Timers_start("MCP RHD coupling")
 
   ! Loop through leaf blocks on the current rank
   call Grid_getTileIterator(itor, LEAF)
@@ -243,6 +246,7 @@ subroutine apply_rad_source_terms(dt)
   end do
   call Grid_releaseTileIterator(itor)
 
+  call Timers_stop("MCP RHD coupling")
 
 end subroutine apply_rad_source_terms
 
