@@ -208,22 +208,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         n_it_current = n_it_current + 1
         
-        ! Old version
-        !allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
-        !                     lo(JAXIS):hi(JAXIS), &
-        !                     lo(KAXIS):hi(KAXIS)))
-        !call Grid_getCellVolumes(tileDesc%level, &
-        !                      lo, hi, &
-        !                      cellVolumes)
-        ! New version
         call Grid_getCellVolumes(tileDesc%level, &
                               icid, icid, &
                               cellVols)
-
-        !dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
         dvol = cellVols(1,1,1)
-
-        !call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
         ! Compute the dshift term for opacity calculation, 
         ! the particles array is not modified
