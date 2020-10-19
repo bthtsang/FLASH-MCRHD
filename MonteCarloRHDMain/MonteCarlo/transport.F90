@@ -117,7 +117,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: lo(1:MDIM)
   integer :: hi(1:MDIM)
   real, allocatable :: cellVolumes(:,:,:)
-  real :: cellVols(1:8, 1:8, 1:8)
+  real :: cellVols(1:1, 1:1, 1:1)
   integer :: icid(MDIM)
   integer, dimension(MDIM) :: local_cellID
   integer :: ansproc, ansblk
@@ -217,11 +217,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !                      cellVolumes)
         ! New version
         call Grid_getCellVolumes(tileDesc%level, &
-                              (/ 1, 1, 1 /), (/ 8, 8, 8/), &
+                              icid, icid, &
                               cellVols)
 
         !dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
-        dvol = cellVols(local_cellID(IAXIS), local_cellID(JAXIS), local_cellID(KAXIS))
+        dvol = cellVols(1,1,1)
 
         !call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
