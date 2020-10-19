@@ -90,6 +90,8 @@ subroutine pt_initPositions (tileDesc,success)
   real :: newenergy, dshift
   real, allocatable, dimension(:,:,:) :: cellVolumes
   integer :: lo(MDIM), hi(MDIM)
+  integer :: icid(MDIM)
+  integer, dimension(MDIM) :: local_cellID
   
   ! Commenting out stub code
   !success = .true. ! DEV: returns true because this stub creates no particles,
@@ -116,6 +118,7 @@ subroutine pt_initPositions (tileDesc,success)
   call tileDesc%deltas(deltaCell)
   lo(:) = blkLimits(LOW,:)
   hi(:) = blkLimits(HIGH,:)
+  icid = tileDesc%cid
 
   ! get pointer to solution data
   call tileDesc%getDataPtr(solnVec, CENTER)
@@ -124,16 +127,22 @@ subroutine pt_initPositions (tileDesc,success)
   allocate(cellVolumes(lo(IAXIS):hi(IAXIS),lo(JAXIS):hi(JAXIS), lo(KAXIS):hi(KAXIS)))
   call Grid_getCellVolumes(tileDesc%level,lo,hi,cellVolumes)
   
+        local_cellID = (/ i - icid(IAXIS) + 1,&
+                          j - icid(JAXIS) + 1,&
+                          k - icid(KAXIS) + 1 /)
   
   ! Do the loop over cells
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
-    cellID(3) = k
+    cellID(KAXIS) = k
+    local_cellID(KAXIS) = k - icid(KAXIS) + 1
 
     do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
-      cellID(2) = j
+      cellID(JAXIS) = j
+      local_cellID(JAXIS) = j - icid(JAXIS) + 1
 
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
-        cellID(1) = i
+        cellID(IAXIS) = i
+        local_cellID(IAXIS) = i - icid(IAXIS) + 1
 
         dV = cellVolumes(i,j,k)
 
@@ -145,7 +154,7 @@ subroutine pt_initPositions (tileDesc,success)
         do ii = 1, pt_initradfield_num
           p = p + 1
 
-          call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
+          call sample_cell_position(bndBox, deltaCell, local_cellID, newxyz)
 
           call sample_iso_velocity(newvel)
 
