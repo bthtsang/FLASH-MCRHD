@@ -39,6 +39,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use relativity, only : compute_dshift
   use Simulation_data, only : clight
   use gr_interface, only : gr_xyzToBlock
+  use Timers_interface, only : Timers_start, Timers_stop
 
   implicit none
 
@@ -116,9 +117,12 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: lo(1:MDIM)
   integer :: hi(1:MDIM)
   real, allocatable :: cellVolumes(:,:,:)
+  real :: cellVols(1:8, 1:8, 1:8)
   integer :: icid(MDIM)
   integer, dimension(MDIM) :: local_cellID
   integer :: ansproc, ansblk
+
+  call Timers_start("MCP Transport")
 
   ! Obtaining the global number of particles (MCPs and sinks)
   call Particles_getGlobalNum(globalNumParticles)
@@ -159,6 +163,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
     mcp_begin = pt_typeInfo(PART_TYPE_BEGIN,ind)
     mcp_end   = pt_typeInfo(PART_TYPE_BEGIN,ind) + pt_typeInfo(PART_LOCAL,ind) - 1
 
+    call Timers_start("MCP - whileLoop")
     do i = mcp_begin, mcp_end
 
       ! Hybrid MPI/OpenMP applications
@@ -203,14 +208,21 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         n_it_current = n_it_current + 1
         
-        allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
-                             lo(JAXIS):hi(JAXIS), &
-                             lo(KAXIS):hi(KAXIS)))
+        ! Old version
+        !allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
+        !                     lo(JAXIS):hi(JAXIS), &
+        !                     lo(KAXIS):hi(KAXIS)))
+        !call Grid_getCellVolumes(tileDesc%level, &
+        !                      lo, hi, &
+        !                      cellVolumes)
+        ! New version
         call Grid_getCellVolumes(tileDesc%level, &
-                              lo, hi, &
-                              cellVolumes)
+                              (/ 1, 1, 1 /), (/ 8, 8, 8/), &
+                              cellVols)
 
-        dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+        !dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+        dvol = cellVols(local_cellID(IAXIS), local_cellID(JAXIS), local_cellID(KAXIS))
+
         !call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
         ! Compute the dshift term for opacity calculation, 
@@ -426,7 +438,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
             ! At this point, the MCP must be near a boundary
             ! Make sure to push it across the boundary
-            call sanitize_boundary_mcp(cellID, xcellID, &
+            call sanitize_boundary_mcp(local_cellID, xcellID, &
                                        bndBox, deltaCell, particles(:,i))
             pos_after_push  = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
@@ -492,7 +504,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                            bndBox, deltaCell, particles(:,i))
 
                 ! xcellID is updated to legal values also
-                call sanitize_xblock_cellID(cellID, xcellID)
+                call sanitize_xblock_cellID(local_cellID, xcellID)
 
                 ! The newPos here should be free of negative phi
                 newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
@@ -504,52 +516,52 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 ! adjust it to be a cross-processor MCP.
                 ! This could happen if a periodic BC sends a MCP farther
                 ! than one block away
-                do ii = 1, NDIM
-                  if ((newPos(ii) < new_bndBox(LOW,ii)) .or.&
-                      (newPos(ii) > new_bndBox(HIGH,ii))) then
-                    print *, "StillWrongBlk", ii
-                    print *, ">cellID", cellID
-                    print *, ">xcellID", xcellID
-                    print *, ">xcellID_original", xcellID_original
-                    print *, ">chk_cellID", chk_cellID
-                    print *, ">new_cellID", new_cellID
-                    print *, "> vel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
+!                do ii = 1, NDIM
+!                  if ((newPos(ii) < new_bndBox(LOW,ii)) .or.&
+!                      (newPos(ii) > new_bndBox(HIGH,ii))) then
+!                    print *, "StillWrongBlk", ii
+!                    print *, ">cellID", cellID
+!                    print *, ">xcellID", xcellID
+!                    print *, ">xcellID_original", xcellID_original
+!                    print *, ">chk_cellID", chk_cellID
+!                    print *, ">new_cellID", new_cellID
+!                    print *, "> vel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
 
-                    print *, ">pos_before_adv", pos_before_adv
-                    print *, ">pos_after_adv", pos_after_adv
-                    print *, ">pos_after_push", pos_after_push
-                    print *, ">pos_after_period", pos_after_period
-                    print *, ">pos_for_negh", pos_for_negh
-                    print *, ">neghdir", neghdir
-                    print *, ">WrongBCurBlk", currentBlk
-                    print *, ">WrongBlkProcID", neghID(BLKNO), neghID(PROCNO)
-                    print *, ">WrongBlkTag", particles(TAG_PART_PROP,i)
-                    print *, ">WrongBlkPos", newPos
-                    print *, ">new_bndBox(LOW:HIGH,ii)", new_bndBox(LOW,ii), new_bndBox(HIGH,ii)
-                    print *, ">bndBox(LOW:HIGH,ii)", bndBox(LOW,ii), bndBox(HIGH,ii)
-                    particles(ISCP_PART_PROP,i) = 1.0d0
-                    is_crossproc = .true.
-                  end if
+!                    print *, ">pos_before_adv", pos_before_adv
+!                    print *, ">pos_after_adv", pos_after_adv
+!                    print *, ">pos_after_push", pos_after_push
+!                    print *, ">pos_after_period", pos_after_period
+!                    print *, ">pos_for_negh", pos_for_negh
+!                    print *, ">neghdir", neghdir
+!                    print *, ">WrongBCurBlk", currentBlk
+!                    print *, ">WrongBlkProcID", neghID(BLKNO), neghID(PROCNO)
+!                    print *, ">WrongBlkTag", particles(TAG_PART_PROP,i)
+!                    print *, ">WrongBlkPos", newPos
+!                    print *, ">new_bndBox(LOW:HIGH,ii)", new_bndBox(LOW,ii), new_bndBox(HIGH,ii)
+!                    print *, ">bndBox(LOW:HIGH,ii)", bndBox(LOW,ii), bndBox(HIGH,ii)
+!                    particles(ISCP_PART_PROP,i) = 1.0d0
+!                    is_crossproc = .true.
+!                  end if
 
-                  if ((chk_cellID(ii) <= NGUARD) .or.&
-                      (chk_cellID(ii) > NGUARD + NXB)) then
-                    print *, "StillWrongCell", ii
-                    print *, "WrongCCurBlk", currentBlk
-                    print *, "WrongCell", chk_cellID
-                    print *, "xcellID_original", xcellID_original
-                    print *, "WrongCBlkProcID", neghID(BLKNO), neghID(PROCNO)
-                    print *, "WrongCellTag", particles(TAG_PART_PROP,i)
-                    print *, "WrongCPos", newPos
-                    print *, "pos_after_adv", pos_after_adv
-                    print *, "pos_after_push", pos_after_push
-                    print *, "pos_after_period", pos_after_period
-                    print *, "pos_for_negh", pos_for_negh
-                    print *, "WrongCbnd", new_bndBox(LOW,ii), new_bndBox(HIGH,ii)
-                    print *, "PrevCbnd", bndBox(LOW,ii), bndBox(HIGH,ii)
-                    particles(ISCP_PART_PROP,i) = 1.0d0
-                    is_crossproc = .true.
-                  end if
-                end do                
+!                  if ((chk_cellID(ii) <= NGUARD) .or.&
+!                      (chk_cellID(ii) > NGUARD + NXB)) then
+!                    print *, "StillWrongCell", ii
+!                    print *, "WrongCCurBlk", currentBlk
+!                    print *, "WrongCell", chk_cellID
+!                    print *, "xcellID_original", xcellID_original
+!                    print *, "WrongCBlkProcID", neghID(BLKNO), neghID(PROCNO)
+!                    print *, "WrongCellTag", particles(TAG_PART_PROP,i)
+!                    print *, "WrongCPos", newPos
+!                    print *, "pos_after_adv", pos_after_adv
+!                    print *, "pos_after_push", pos_after_push
+!                    print *, "pos_after_period", pos_after_period
+!                    print *, "pos_for_negh", pos_for_negh
+!                    print *, "WrongCbnd", new_bndBox(LOW,ii), new_bndBox(HIGH,ii)
+!                    print *, "PrevCbnd", bndBox(LOW,ii), bndBox(HIGH,ii)
+!                    particles(ISCP_PART_PROP,i) = 1.0d0
+!                    is_crossproc = .true.
+!                  end if
+!                end do                
               end if
             end if ! if not (isoutside)
 
@@ -600,7 +612,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         
             if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
             !if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
-              print *, "Old cell", cellID 
+              print *, "Old cell", local_cellID 
               print *, "Target cell", xcellID
               print *, "Current cell", new_cellID
               print *, "Old position", currentPos
@@ -621,6 +633,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               print *, "bndbox-z", bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD - 1),&
                                    bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD) 
               print *, "new-bndbox-z", new_bndBox(LOW,3) , new_bndBox(HIGH,3)
+              print *, "deltas", deltaCell
+              print *, "smlpush", pt_smlpush
               print *, "min_time", min_time
               print *, "min_dist", min_dist
               print *, "t_remain", particles(TREM_PART_PROP, i), "of", dtNew
@@ -687,7 +701,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         call tileDesc%releaseDataPtr(solnVec, CENTER)
 
-        deallocate(cellVolumes)
+        !deallocate(cellVolumes)
       end do ! end of trem/iscp while loop for one MCP
 
       ! finished MCPs will not enter the above while loop,
@@ -697,11 +711,15 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
       end if
 
     end do ! Done one pass of MCPs
+    call Timers_stop("MCP - whileLoop")
 
     ! Update the processor and block IDs
+    call Timers_start("MCP - moveParticles")
     call Grid_moveParticles(particles, NPART_PROPS, pt_maxPerProc,&
                   pt_numLocal, pt_indexList, pt_indexCount,.FALSE.)
+    call Timers_stop("MCP - moveParticles")
 
+    call Timers_start("MCP - sortParticles")
 #ifdef TYPE_PART_PROP
     call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
                             pt_maxPerProc, particlesPerBlk, BLK_PART_PROP,&
@@ -710,6 +728,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
     call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
                             pt_maxPerProc, particlesPerBlk, BLK_PART_PROP)
 #endif
+    call Timers_stop("MCP - sortParticles")
     call pt_updateTypeDS(particlesPerBlk)
 
     num_done_local = sum(num_done_list)
@@ -763,6 +782,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                           BLK_PART_PROP)
 #endif
   call pt_updateTypeDS(particlesPerBlk)
+
+  call Timers_stop("MCP Transport")
 
   return
 
@@ -1428,14 +1449,14 @@ subroutine sanitize_xblock_cellID(cellID, xcellID)
 
   do ii = IAXIS, KAXIS
     if (delta_cellID(ii) == 1) then
-      ! Hitting the 13th cell
-      if (xcellID(ii) == NGUARD+niib(ii)+1) then
+      ! Hitting the 9th cell
+      if (xcellID(ii) == niib(ii)+1) then
         xcellID(ii) = xcellID(ii) - niib(ii)
       end if
 
     else if (delta_cellID(ii) == -1) then
-      ! Hitting the 4th cell
-      if (xcellID(ii) == NGUARD) then
+      ! Hitting the 0th cell
+      if (xcellID(ii) == 0) then
         xcellID(ii) = xcellID(ii) + niib(ii)
       end if
     end if
