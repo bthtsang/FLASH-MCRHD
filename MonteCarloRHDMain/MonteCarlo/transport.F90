@@ -71,7 +71,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real, dimension(MDIM) :: deltaCell
 
   real :: dt
-  real, pointer, dimension(:,:,:,:) :: solnVec
+  real, pointer, dimension(:,:,:,:) :: solnVec => NULL()
   real :: k_a, k_s
   real :: fleck, min_time, min_dist
   real :: k_a_cmf, k_s_cmf
