@@ -203,8 +203,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         n_it_current = n_it_current + 1
         
         call Grid_getCellVolumes(tileDesc%level, &
-                              icid, icid, &
+                              cellID, cellID, &
                               cellVols)
+        ! lbound(cellVols)==1 and ubound(cellVols)==1
         dvol = cellVols(1,1,1)
 
         ! Compute the dshift term for opacity calculation, 
