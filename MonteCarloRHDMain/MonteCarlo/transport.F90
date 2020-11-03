@@ -114,10 +114,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   ! variables for flash5 grid interface
   type(Grid_iterator_t) :: itor, newItor
   type(Grid_tile_t)    :: tileDesc, newTileDesc
-  integer :: lo(1:MDIM)
-  integer :: hi(1:MDIM)
   real, allocatable :: cellVolumes(:,:,:)
-  real :: cellVols(1:8, 1:8, 1:8)
+  real :: cellVols(1:1, 1:1, 1:1)
   integer :: icid(MDIM)
   integer, dimension(MDIM) :: local_cellID
   integer :: ansproc, ansblk
@@ -181,11 +179,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         ! HACK - this is paramesh specific
         itor%curBlk = currentBlk
         call itor%currentTile(tileDesc)
-
         call tileDesc%getDataPtr(solnVec, CENTER)
-
-        lo(:) = tileDesc%limits(LOW,  :)
-        hi(:) = tileDesc%limits(HIGH, :)
         icid  = tileDesc%cid
         
         currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
@@ -208,22 +202,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         n_it_current = n_it_current + 1
         
-        ! Old version
-        !allocate(cellVolumes(lo(IAXIS):hi(IAXIS), &
-        !                     lo(JAXIS):hi(JAXIS), &
-        !                     lo(KAXIS):hi(KAXIS)))
-        !call Grid_getCellVolumes(tileDesc%level, &
-        !                      lo, hi, &
-        !                      cellVolumes)
-        ! New version
         call Grid_getCellVolumes(tileDesc%level, &
-                              (/ 1, 1, 1 /), (/ 8, 8, 8/), &
+                              cellID, cellID, &
                               cellVols)
-
-        !dvol = cellVolumes(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
-        dvol = cellVols(local_cellID(IAXIS), local_cellID(JAXIS), local_cellID(KAXIS))
-
-        !call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
+        ! lbound(cellVols)==1 and ubound(cellVols)==1
+        dvol = cellVols(1,1,1)
 
         ! Compute the dshift term for opacity calculation, 
         ! the particles array is not modified
