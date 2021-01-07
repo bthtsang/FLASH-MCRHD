@@ -32,6 +32,7 @@ subroutine apply_rad_source_terms(dt)
   use Simulation_data, only : a_rad
   use Multispecies_interface, only : Multispecies_getProperty
   use Driver_interface, only : Driver_abortFlash
+  use Timers_interface, only : Timers_start, Timers_stop
 
   implicit none
 #include "Flash.h"
@@ -52,6 +53,8 @@ subroutine apply_rad_source_terms(dt)
   real :: temp, rho, eint, ekin, ener
   ! Debug
   real :: oldtemp, oldeint, netheating, oldele
+
+  call Timers_start("MCP RHD coupling")
 
   ! Get the list of leaf blocks
   call Grid_getListOfBlocks(LEAF, blkList, numofblks)
@@ -87,6 +90,9 @@ subroutine apply_rad_source_terms(dt)
 
           ! Apply radiation energy source
           if (pt_is_thermally_coupled) then
+            oldeint = solnVec(EINT_VAR,i,j,k)
+            netheating = solnVec(ABSE_VAR,i,j,k) + solnVec(EMIE_VAR,i,j,k)
+
             ! Thermal heating and cooling
             solnVec(EINT_VAR,i,j,k) = solnVec(EINT_VAR,i,j,k)&
                                        + solnVec(ABSE_VAR,i,j,k)&
@@ -94,6 +100,12 @@ subroutine apply_rad_source_terms(dt)
             solnVec(ENER_VAR,i,j,k) = solnVec(ENER_VAR,i,j,k)&
                                        + solnVec(ABSE_VAR,i,j,k)&
                                        + solnVec(EMIE_VAR,i,j,k)
+
+            !if (netheating > oldeint) then
+            !  print *, "huge_heating", oldeint
+            !  print *, "net heating", netheating, solnVec(ABSE_VAR,i,j,k), solnVec(EMIE_VAR,i,j,k)
+            !  print *, "now eint", solnVec(EINT_VAR,i,j,k)
+            !end if
 
             ! Photoionization heating and cooling
 #ifdef HEAT_VAR
@@ -240,6 +252,7 @@ subroutine apply_rad_source_terms(dt)
     call Grid_releaseBlkPtr(blockID, solnVec)
   end do
 
+  call Timers_stop("MCP RHD coupling")
 
 end subroutine apply_rad_source_terms
 
