@@ -70,6 +70,10 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
   v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
+  ! velocities in unit of c
+  v_mcp = v_mcp / clight
+  v_gas = v_gas / clight
+
   ! Extract MCP's position and time
   t_mcp = particle(TREM_PART_PROP)
   x_mcp = particle(POSX_PART_PROP:POSZ_PART_PROP)
@@ -88,30 +92,33 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
 
   ! Computing relativistic quantities
   v2 = dot_product(v_gas, v_gas) 
-  beta2 = v2/clight/clight
+  beta2 = v2
   vdd  = dot_product(v_gas, v_mcp)
   gamm = 1.0/sqrt(1.0 - beta2)
 
   ! dshift is the epsilon_0/epsilon factor in the LT,
   ! which is also useful for converting kappa's between frames
-  dshift = gamm*(1.0 - vdd/clight)
+
+  dshift = gamm*(1.0 - vdd)
 
   ! Compute new position
-  vdx = dot_product(v_gas, x_mcp)
+  vdx = dot_product(v_gas, x_mcp/clight)
   x_mcp_new(1) = x_mcp(1) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(1)
   x_mcp_new(2) = x_mcp(2) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(2)
   x_mcp_new(3) = x_mcp(3) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(3)
+  !x_mcp_new = x_mcp
+
   if (gr_geometry == SPHERICAL) then
     call get_spherical_position(x_mcp_new, x_mcp_sph)
     x_mcp_new = x_mcp_sph
   end if
   ! Compute new time
-  t_mcp_new = gamm*(t_mcp - vdx/clight/clight)
+  t_mcp_new = gamm*(t_mcp - vdx)
 
   ! Update photon propagation direction to new frame
-  v_mcp_new(1) = (v_mcp(1) - gamm*v_gas(1)/clight*(1.0 - gamm*vdd/clight/(gamm+1.0)))/dshift
-  v_mcp_new(2) = (v_mcp(2) - gamm*v_gas(2)/clight*(1.0 - gamm*vdd/clight/(gamm+1.0)))/dshift
-  v_mcp_new(3) = (v_mcp(3) - gamm*v_gas(3)/clight*(1.0 - gamm*vdd/clight/(gamm+1.0)))/dshift
+  v_mcp_new(1) = (v_mcp(1) - gamm*v_gas(1)*(1.0 - gamm*vdd/(gamm+1.0)))/dshift
+  v_mcp_new(2) = (v_mcp(2) - gamm*v_gas(2)*(1.0 - gamm*vdd/(gamm+1.0)))/dshift
+  v_mcp_new(3) = (v_mcp(3) - gamm*v_gas(3)*(1.0 - gamm*vdd/(gamm+1.0)))/dshift
   ! Re-normalize velocity vector just in case
   v_norm = sqrt(dot_product(v_mcp_new, v_mcp_new))
   v_mcp_new(1) = v_mcp_new(1) / v_norm * clight
@@ -146,11 +153,12 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
   real, intent(out) :: dshift
 
   ! aux variables
-  real, dimension(MDIM) :: v_mcp, v_gas
+  real, dimension(MDIM) :: v_mcp, v_gas, n_hat
   real :: v2, beta2, vdd, gamm
 
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
-  v_gas = solnVec(cellID(IAXIS), cellID(JAXIS), cellID(KAXIS), VELX_VAR:VELZ_VAR)
+  n_hat = v_mcp / clight
+  v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   if (tolab) then
     v_gas = -v_gas
@@ -159,7 +167,7 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
   ! Computing relativistic quantities
   v2 = dot_product(v_gas, v_gas) 
   beta2 = v2/clight/clight
-  vdd  = dot_product(v_gas, v_mcp)
+  vdd  = dot_product(v_gas, n_hat)
   gamm = 1.0/sqrt(1.0 - beta2)
   dshift = gamm*(1.0 - vdd/clight)
 
