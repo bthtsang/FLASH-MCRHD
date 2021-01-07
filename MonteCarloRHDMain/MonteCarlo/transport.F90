@@ -16,7 +16,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Particles_interface, only : Particles_getGlobalNum
   use Particles_data, only : pt_typeInfo, pt_maxPerProc, pt_indexList,&
                              pt_indexCount, pt_meshMe, pt_numLocal
-  use Particles_data, only : pt_is_eff_scattering, pt_max_rt_iterations,&
+  use Particles_data, only : pt_use_fromPos, &
+                             pt_is_eff_scattering, pt_max_rt_iterations,&
                              pt_is_scat_elastic, pt_is_escat_elastic,&
                              pt_is_scat_iso, pt_is_escat_iso,&
                              pt_STAY_ID, pt_SCAT_ID, pt_ESCAT_ID,&
@@ -38,6 +39,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                          sanitize_fully_ionized_cell
   use relativity, only : compute_dshift
   use Simulation_data, only : clight
+  use Timers_interface, only : Timers_start, Timers_stop
 
   implicit none
 
@@ -88,7 +90,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   logical :: isoutside
   integer, dimension(MDIM) :: neghdir
   integer,dimension(BLKNO:PROCNO) :: neghID
-  real, dimension(MDIM) :: newPos
+  real, dimension(MDIM) :: newPos, newVel
   integer, dimension(MDIM) :: chk_cellID
   integer, dimension(MDIM) :: new_cellID
   integer :: blkType
@@ -102,8 +104,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real, dimension(MDIM) :: or_hat, on_hat, nr_hat, nn_hat
   real, dimension(MDIM) :: sph_vel
   real, dimension(MDIM) :: cart_pos
-  real :: theta_dist, phi_dist, closest_dist
-  integer :: theta_dir, phi_dir
+  real :: r_dist, theta_dist, phi_dist, closest_dist
+  integer :: r_dir, theta_dir, phi_dir
   real :: pos_x, pos_y, pos_z, pos_r, pos_t, pos_p
   integer :: quadrant
   integer :: ii
@@ -115,6 +117,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer, dimension(MDIM) :: xcellID_original
   integer :: crossproc_tag
   integer :: n_it_current
+  integer :: old_rflvl, new_rflvl
+
+  real :: r_in, r_out, theta_in, theta_out
+
+  call Timers_start("MCP Transport")
 
   ! Obtaining the global number of particles (MCPs and sinks)
   call Particles_getGlobalNum(globalNumParticles)
@@ -155,6 +162,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
     mcp_begin = pt_typeInfo(PART_TYPE_BEGIN,ind)
     mcp_end   = pt_typeInfo(PART_TYPE_BEGIN,ind) + pt_typeInfo(PART_LOCAL,ind) - 1
 
+    call Timers_start("MCP - whileLoop")
     do i = mcp_begin, mcp_end
 
       ! Hybrid MPI/OpenMP applications
@@ -198,27 +206,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         call get_cellID(bndBox, deltaCell, currentPos, cellID)
         n_it_current = n_it_current + 1
-        if (((cellID(1) > 16) .or. (cellID(2) > 16) .or. (cellID(3) > 16)) .or.&
-            ((cellID(1) < 1) .or. (cellID(2) < 1) .or. (cellID(3) < 1))) then
-          print *, "wrong cellID", cellID
-          !call Grid_getBlkIDFromPos(currentPos, actualBlkID, actualprocID, amr_mpi_meshComm)
-          !print *, "ActualID", actualBlkID, actualprocID
-
-          print *, "causing pos", currentPos
-          print *, "previous fate", mcp_fate
-          print *, "is_crossproc", is_crossproc
-          print *, "currentBlk", currentBlk
-          print *, "currentProc", currentProc
-          print *, "bndBoxX", bndBox(:,1)
-          print *, "bndBoxY", bndBox(:,2)
-          print *, "bndBoxZ", bndBox(:,3)
-          print *, "deltas", deltaCell
-          print *, "nump", particles(NUMP_PART_PROP,i)
-          print *, "TAG", particles(TAG_PART_PROP,i)
-          print *, "crossproc_tag", crossproc_tag
-          print *, "TimeRemains", particles(TREM_PART_PROP,i)
-          print *, "NumIter.", n_it_current
-        end if
         
         call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
@@ -284,6 +271,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !  print *, "xcellID", xcellID
         !end if
 
+        call get_spherical_velocity(currentPos, currentVel, sph_vel)
+
         if (numpass > pt_max_rt_iterations) then
           print *, "many iterations...", mcp_fate, min_time, min_dist
           print *, "current it", numpass, i
@@ -307,7 +296,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                       particles(VELX_PART_PROP:VELZ_PART_PROP,i),&
                                       sph_vel)
           print *, "sph vel", sph_vel
-          !call Driver_abortFlash("Too many RT subcycles! Aborted.")
+          call Driver_abortFlash("Too many RT subcycles! Aborted.")
         end if
 
         ! Perform actions according to mcp_fate
@@ -332,7 +321,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             !print *, "on_hat", i, on_hat
             !print *, "nn_hat", i, nn_hat
             !print *, "******************"
-
             call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
                                          mcp_fate, dt, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
@@ -377,6 +365,74 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               call eff_scatter_ionizing_mcp(solnVec, cellID, particles(:,i),&
                                pt_is_caseB)
             end if
+
+            ! Benny debugging
+!            call get_cellID(bndBox, deltaCell, currentPos, cellID)
+
+!            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP,i)
+!            newVel = particles(VELX_PART_PROP:VELZ_PART_PROP,i)
+!            call get_cellID(bndBox, deltaCell, newPos, chk_cellID)
+!            if (chk_cellID(2) > 12) then
+!              print *, "old cellID", cellID
+!              print *, "wrong after scat.", chk_cellID
+!              print *, "fate", mcp_fate 
+!              print *, "density", solnVec(DENS_VAR, cellID(1), cellID(2), cellID(3))
+!              print *, "temperature", solnVec(TEMP_VAR, cellID(1), cellID(2), cellID(3))
+!              print *, "fleck", fleck
+!              print *, "k_a/s", k_a, k_s
+!
+!              r_in  = bndBox(LOW, IAXIS) +&
+!                      (cellID(IAXIS) - NGUARD - 1) * deltaCell(IAXIS)
+!              r_out = r_in + deltaCell(IAXIS)
+!              theta_in  = bndBox(LOW, JAXIS) +&
+!                          (cellID(JAXIS) - NGUARD - 1) * deltaCell(JAXIS)
+!              theta_out = theta_in + deltaCell(JAXIS)
+!              print *, "r_in", r_in
+!              print *, "r_out", r_out
+!              print *, "theta_in", theta_in, (theta_in == 0.5*PI)
+!              print *, "theta_out", theta_out, (theta_out == 0.5*PI)
+!
+!              print *, "bndBox-x", bndBox(LOW,1), bndBox(HIGH,1)
+!              print *, "bndBox-y", bndBox(LOW,2), bndBox(HIGH,2)
+!              print *, "bndBox-z", bndBox(LOW,3), bndBox(HIGH,3)
+!              print *, "deltacell", deltaCell
+!
+!              print *, "reconstructing history..."
+!              print *, "old position", currentPos
+!              call get_cartesian_position(currentPos, cart_pos)
+!              print *, "old cart position", cart_pos
+!              print *, "old vel", currentVel
+!              print *, "old nhat", currentVel/clight
+!              call get_spherical_velocity(currentPos, currentVel, sph_vel)
+!              print *, "old sph vel", sph_vel
+!
+!              print *, "new position", newPos
+!              call get_cartesian_position(newPos, cart_pos)
+!              print *, "new cart position", cart_pos
+!              print *, "new vel", newVel
+!              print *, "new nhat", newVel/clight
+!              call get_spherical_velocity(newPos, newVel, sph_vel)
+!              print *, "new sph vel", sph_vel
+!
+!              print *, "min_dist", min_dist
+!              print *, "min_time", min_time
+!
+!              print *, "cell-x", bndBox(LOW,1) + deltaCell(1)*(cellID(1) - NGUARD - 1),&
+!                                   bndBox(LOW,1) + deltaCell(1)*(cellID(1) - NGUARD)
+!              print *, "cell-y", bndBox(LOW,2) + deltaCell(2)*(cellID(2) - NGUARD - 1),&
+!                                   bndBox(LOW,2) + deltaCell(2)*(cellID(2) - NGUARD)
+!              print *, "cell-z", bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD - 1),&
+!                                   bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD)
+!
+!              particles(POSX_PART_PROP:POSZ_PART_PROP, i) = currentPos
+!              particles(VELX_PART_PROP:VELZ_PART_PROP, i) = currentVel
+!
+!              call calc_distance_to_spherical_wall(bndBox, deltaCell,&
+!                          particles(:, i), cellID, r_dist, r_dir, .true.)
+!              call calc_distance_to_theta_wall(bndBox, deltaCell,&
+!                          particles(:, i), cellID, theta_dist, theta_dir, .true.)
+!            end if
+
 
             ! Update remaining time step
             particles(TREM_PART_PROP, i) = particles(TREM_PART_PROP, i)&
@@ -471,16 +527,30 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             call get_cellID(bndBox, deltaCell, newPos, new_cellID)
 
             !print *, "newcell", new_cellID
+
             crossproc_tag = int(particles(TAG_PART_PROP,i))
 
             is_crossproc = .false.
             if (isoutside) then
-              call gr_findNeghID(currentBlk, newPos, neghdir, neghID)
+              if (pt_use_fromPos) then
+                call Grid_getBlkIDFromPos(newPos, neghID(BLKNO), neghID(PROCNO),&
+                                          amr_mpi_meshComm)
+              else
+                call gr_findNeghID(currentBlk, newPos, neghdir, neghID)
+              end if
+
+              if (neghID(PROCNO) == currentProc) then
+                call Grid_getBlkRefineLevel(currentBlk, old_rflvl)
+                call Grid_getBlkRefineLevel(neghID(BLKNO), new_rflvl)
+              end if
 
               if (neghID(PROCNO) /= currentProc) then
                 ! Make sure the phi values are legal for the new_cellID 
                 !call sanitize_phi_periodic_BCs(cellID, xcellID, &
                 !                           bndBox, deltaCell, particles(:,i))
+                particles(ISCP_PART_PROP,i) = 1.0d0
+                is_crossproc = .true.
+              else if (old_rflvl /= new_rflvl) then
                 particles(ISCP_PART_PROP,i) = 1.0d0
                 is_crossproc = .true.
               else
@@ -506,6 +576,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 ! Update the new_cellID for new bndBox and deltas
                 call get_cellID(new_bndBox, new_deltaCell, newPos, chk_cellID)
                 call get_cellID(new_bndBox, new_deltaCell, newPos, new_cellID)
+
 
                 ! If the new position is still not within the new block,
                 ! adjust it to be a cross-processor MCP.
@@ -533,7 +604,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                     print *, ">WrongBlkTag", particles(TAG_PART_PROP,i)
                     print *, ">WrongBlkPos", newPos
                     print *, ">new_bndBox(LOW:HIGH,ii)", new_bndBox(LOW,ii), new_bndBox(HIGH,ii)
-                    print *, ">bndBox(LOW:HIGH,ii)", bndBox(LOW,ii), bndBox(HIGH,ii)
+                    print *, ">bndBox(LOW:HIGH,1)", bndBox(LOW,1), bndBox(HIGH,1)
+                    print *, ">bndBox(LOW:HIGH,2)", bndBox(LOW,2), bndBox(HIGH,2)
+                    print *, ">bndBox(LOW:HIGH,3)", bndBox(LOW,3), bndBox(HIGH,3)
                     particles(ISCP_PART_PROP,i) = 1.0d0
                     is_crossproc = .true.
                   end if
@@ -617,17 +690,25 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               print *, ">pos_after_push", pos_after_push
               print *, ">pos_after_period", pos_after_period
               print *, ">pos_for_negh", pos_for_negh
+              print *, "actualVel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
               print *, "outside?", isoutside
               print *, "neghDir", neghDir
               print *, "procID", neghID(PROCNO), currentProc, particles(PROC_PART_PROP, i)
               print *, "blkID", neghID(BLKNO), currentBlk, particles(BLK_PART_PROP, i)
+              print *, "deltaCell", deltaCell
+              print *, "new_deltaCell", new_deltaCell
               print *, "bndbox-x", bndBox(LOW,1) + deltaCell(1)*(cellID(1) - NGUARD - 1),&
                                    bndBox(LOW,1) + deltaCell(1)*(cellID(1) - NGUARD) 
               print *, "bndbox-y", bndBox(LOW,2) + deltaCell(2)*(cellID(2) - NGUARD - 1),&
                                    bndBox(LOW,2) + deltaCell(2)*(cellID(2) - NGUARD) 
               print *, "bndbox-z", bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD - 1),&
                                    bndBox(LOW,3) + deltaCell(3)*(cellID(3) - NGUARD) 
-              print *, "new-bndbox-z", new_bndBox(LOW,3) , new_bndBox(HIGH,3)
+              print *, "old-bndbox-x", bndBox(LOW,1), bndBox(HIGH,1)
+              print *, "old-bndbox-y", bndBox(LOW,2), bndBox(HIGH,2)
+              print *, "old-bndbox-z", bndBox(LOW,3), bndBox(HIGH,3)
+              print *, "new-bndbox-x", new_bndBox(LOW,1), new_bndBox(HIGH,1)
+              print *, "new-bndbox-y", new_bndBox(LOW,2), new_bndBox(HIGH,2)
+              print *, "new-bndbox-z", new_bndBox(LOW,3), new_bndBox(HIGH,3)
               print *, "min_time", min_time
               print *, "min_dist", min_dist
               print *, "t_remain", particles(TREM_PART_PROP, i), "of", dtNew
@@ -640,6 +721,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               call advance_mcp_cartesian(cart_pos, currentVel, min_time)
               print *, "advancedCart", cart_pos
               print *, "advancedratios", cart_pos(2)/cart_pos(1)
+              print *, "fleck", solnVec(FLEC_VAR, cellID(1), cellID(2), cellID(3))
 
               pos_x = cart_pos(IAXIS)
               pos_y = cart_pos(JAXIS)
@@ -665,6 +747,12 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               call get_spherical_velocity(newPos, currentVel, sph_vel)
               print *, "sph_vel_new", sph_vel
 
+              ! Resetting the MCP's position
+              particles(POSX_PART_PROP:POSZ_PART_PROP, i) = currentPos
+              particles(VELX_PART_PROP:VELZ_PART_PROP, i) = currentVel
+
+              call calc_distance_to_spherical_wall(bndBox, deltaCell,&
+                          particles(:, i), cellID, r_dist, r_dir, .true.)
               call calc_distance_to_theta_wall(bndBox, deltaCell,&
                           particles(:, i), cellID, theta_dist, theta_dir, .true.)
               call calc_distance_to_phi_wall(bndBox, deltaCell,&
@@ -674,6 +762,31 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
               call Driver_abortFlash("transport: cell boundary not crossed.")
             end if
+
+            ! Checking the new cellID to be legal
+            call Grid_getBlkBoundBox(int(particles(BLK_PART_PROP,i)), new_bndBox)
+            call Grid_getDeltas(int(particles(BLK_PART_PROP,i)), new_deltaCell)
+            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            ! Update the new_cellID for new bndBox and deltas
+            call get_cellID(new_bndBox, new_deltaCell, newPos, new_cellID)
+            if ((new_cellID(2) > 12) .and. (.not. is_crossproc)) then
+              print *, "isoutside", isoutside
+              print *, "neghDir", neghDir
+              print *, "procID", neghID(PROCNO), currentProc, particles(PROC_PART_PROP, i)
+              print *, "blkID", neghID(BLKNO), currentBlk, particles(BLK_PART_PROP, i)
+              print *, "MCP exceed theta", new_cellID
+              print *, "original cellID", cellID
+              print *, "pos", particles(POSX_PART_PROP:POSZ_PART_PROP,i)
+              print *, "xcellID_original", xcellID_original
+              print *, "xcellID", xcellID
+              print *, ">pos_before_adv", pos_before_adv
+              print *, ">pos_after_adv", pos_after_adv
+              print *, ">pos_after_push", pos_after_push
+              print *, ">pos_after_period", pos_after_period
+              print *, "particles(ISCP)", particles(ISCP_PART_PROP,i)
+              print *, "is_crossproc", is_crossproc
+            end if
+
 
             particles(TREM_PART_PROP, i) = particles(TREM_PART_PROP, i)&
                                          - min_time
@@ -691,7 +804,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !print *, "on_hat", i, on_hat
         !print *, "nn_hat", i, nr_hat
         !print *, "=================="
-
+        call Grid_releaseBlkPtr(currentBlk, solnVec)
 
       end do ! end of trem/iscp while loop for one MCP
 
@@ -702,11 +815,15 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
       end if
 
     end do ! Done one pass of MCPs
+    call Timers_stop("MCP - whileLoop")
 
     ! Update the processor and block IDs
+    call Timers_start("MCP - moveParticles")
     call Grid_moveParticles(particles, NPART_PROPS, pt_maxPerProc,&
                   pt_numLocal, pt_indexList, pt_indexCount,.FALSE.)
+    call Timers_stop("MCP - moveParticles")
 
+    call Timers_start("MCP - sortParticles")
 #ifdef TYPE_PART_PROP
     call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
                             pt_maxPerProc, particlesPerBlk, BLK_PART_PROP,&
@@ -715,6 +832,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
     call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
                             pt_maxPerProc, particlesPerBlk, BLK_PART_PROP)
 #endif
+    call Timers_stop("MCP - sortParticles")
     call pt_updateTypeDS(particlesPerBlk)
 
     num_done_local = sum(num_done_list)
@@ -768,6 +886,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                           BLK_PART_PROP)
 #endif
   call pt_updateTypeDS(particlesPerBlk)
+  call Timers_stop("MCP Transport")
 
   return
 
@@ -1033,6 +1152,24 @@ subroutine advance_mcp_cartesian(pos, vel, dt)
 end subroutine advance_mcp_cartesian
 
 
+subroutine advance_mcp_spherical(pos, vel, dt)
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  real, dimension(MDIM), intent(inout) :: pos
+  real, dimension(MDIM), intent(in) :: vel
+  real, intent(in) :: dt
+
+  ! In multi-D spherical sim., we still treat the
+  ! 3D transport of MCPs.
+  pos(IAXIS) = pos(IAXIS) + dt*vel(IAXIS)
+  pos(JAXIS) = pos(JAXIS) + dt*vel(JAXIS)
+  pos(KAXIS) = pos(KAXIS) + dt*vel(KAXIS)
+
+end subroutine advance_mcp_spherical
+
+
 subroutine advance_mcp(particle, dt)
   use Grid_data, only : gr_geometry
   use Simulation_data, only : clight
@@ -1055,6 +1192,9 @@ subroutine advance_mcp(particle, dt)
 
   real, dimension(MDIM) :: old_cart_pos
 
+  ! debugging
+  real, dimension(MDIM) :: sph_vel
+
   ! Grabbing the position and velocity attributes
   pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
   vel = particle(VELX_PART_PROP:VELZ_PART_PROP)
@@ -1062,6 +1202,10 @@ subroutine advance_mcp(particle, dt)
   if (gr_geometry == CARTESIAN) then
     call advance_mcp_cartesian(pos, vel, dt)
   else if (gr_geometry == SPHERICAL) then
+    ! use a dummy phi value if in 2D. 3D code below 
+    ! can be used for 2D too, therefore the <=3 change.
+    ! The default value of 1.0 should suffice actually
+    !if (NDIM == 2) pos(KAXIS) = 0.5*PI
 
     r_old = pos(IAXIS) ! Spherical coord
     call get_cartesian_position(pos, cart_pos)
@@ -1071,7 +1215,8 @@ subroutine advance_mcp(particle, dt)
 
     mu = dot_product(r_hat, n_hat) ! directional cosine
 
-    if (NDIM <= 2) then
+    ! Use cosine law for a faster calc.
+    if (NDIM == 1) then
       d_traveled = clight * dt
 
       ! cosine law
@@ -1080,15 +1225,14 @@ subroutine advance_mcp(particle, dt)
       pos(1) = r_new
       call Driver_abortFlash("advance_mcp:&
             1D/2D spherical RT not implemented yet.")
-
-    else if (NDIM == 3) then
-      call advance_mcp_cartesian(cart_pos, vel, dt)
+    else if (NDIM <= 3) then
+      call advance_mcp_spherical(cart_pos, vel, dt)
       call get_spherical_position(cart_pos, sph_pos_new)
      
-      d_traveled = clight * dt
-      r_new = sqrt(r_old*r_old + d_traveled*d_traveled +&
-                   2.0d0*r_old*d_traveled*mu)
-      sph_pos_new(1) = r_new
+      !d_traveled = clight * dt
+      !r_new = sqrt(r_old*r_old + d_traveled*d_traveled +&
+      !             2.0d0*r_old*d_traveled*mu)
+      !sph_pos_new(1) = r_new
       !print *, "advmcp-old", r_hat
       !print *, "n_hat", n_hat
       if (sph_pos_new(1) == pos(1)) then
@@ -1135,6 +1279,7 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   integer, dimension(MDIM) :: delta_cellID
   integer :: currentBlk, ii
   integer, dimension(2,MDIM) :: faces, onBoundary
+  real :: push_step
 
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
@@ -1150,7 +1295,19 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   ! If the MCP is moving up/down a cell, give it a little push
   do ii = IAXIS, KAXIS
     if (delta_cellID(ii) == 1) then
-      now_pos(ii) = now_pos(ii) + deltaCell(ii)*pt_smlpush
+      push_step = deltaCell(ii)*pt_smlpush
+      ! For spherical coordinates where theta and phi are of order
+      ! ~PI. A small push of 1.0e-12 might not be enough to push the
+      ! MCP across the boundary because of quadratic eqn precision.
+      ! Targeting spherical/theta direction
+      !if (push_step < 1.0e-7) push_step = 1.0e-7
+      if ((gr_geometry == SPHERICAL) .and. (ii == JAXIS)) then
+        if (push_step <= 1.0e-3*deltaCell(ii)) then
+          push_step = 1.0e-3*deltaCell(ii)
+        end if
+      end if
+      !now_pos(ii) = now_pos(ii) + deltaCell(ii)*pt_smlpush
+      now_pos(ii) = now_pos(ii) + push_step
 
       ! Sanitize the phi direction in case of periodic BCs.
       if (ii == KAXIS) then
@@ -1164,7 +1321,15 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
       end if
 
     else if (delta_cellID(ii) == -1) then
-      now_pos(ii) = now_pos(ii) - deltaCell(ii)*pt_smlpush
+      push_step = deltaCell(ii)*pt_smlpush
+      !if (push_step < 1.0e-7) push_step = 1.0e-7
+      if ((gr_geometry == SPHERICAL) .and. (ii == JAXIS)) then
+        if (push_step <= 1.0e-3*deltaCell(ii)) then
+          push_step = 1.0e-3*deltaCell(ii)
+        end if
+      end if
+      !now_pos(ii) = now_pos(ii) - deltaCell(ii)*pt_smlpush
+      now_pos(ii) = now_pos(ii) - push_step
 
       ! Sanitize the phi direction in case of periodic BCs.
       if (ii == KAXIS) then
@@ -1448,7 +1613,7 @@ end subroutine
 subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
                                            particle, d_cart, cart_dir)
   use Simulation_data, only : clight
-  use Particles_data, only : pt_smlpush
+  use Particles_data, only : pt_smlpush, pt_small
   use Driver_interface, only : Driver_abortFlash
   implicit none
 #include "constants.h"
@@ -1468,6 +1633,7 @@ subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
   integer :: id, ii
   real, dimension(2) :: soln
   real :: pos_expected
+  real :: v_floored
 
   ! Getting MCP position
   pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
@@ -1481,8 +1647,11 @@ subroutine calc_distance_to_cartesian_wall(bndBox, deltaCell, axis,&
   x_inner = bndBox(LOW,axis) + id*deltaCell(axis)
   x_outer = x_inner + deltaCell(axis)
 
-  soln(1) = (x_inner - pos(axis)) / vel(axis) ! lower bnd
-  soln(2) = (x_outer - pos(axis)) / vel(axis) ! outer bnd
+  v_floored = vel(axis)
+  ! To catch zero-velocity case for axis-aligned face emission
+  if (abs(v_floored) < pt_small) v_floored = pt_small
+  soln(1) = (x_inner - pos(axis)) / v_floored ! lower bnd
+  soln(2) = (x_outer - pos(axis)) / v_floored ! outer bnd
 
   ! Select the minimum positive time 
   min_time = huge(1.0d0)
@@ -1548,7 +1717,7 @@ end subroutine calc_distance_to_cartesian_wall
 ! Solving for the intersection with the next spherical wall
 ! The quadratic system is a_sys*x^2 + b_sys*x + c_sys = 0
 subroutine calc_distance_to_spherical_wall(bndBox, deltaCell,&
-                                           particle, cellID, d_r, r_dir)
+                                           particle, cellID, d_r, r_dir, chk_stat)
   use Simulation_data, only : clight
   use Driver_interface, only : Driver_abortFlash
   use spherical, only : get_cartesian_position
@@ -1563,6 +1732,7 @@ subroutine calc_distance_to_spherical_wall(bndBox, deltaCell,&
   real, dimension(MDIM), intent(in) :: deltaCell
   real, intent(out) :: d_r
   integer, intent(out):: r_dir
+  logical, intent(in), optional :: chk_stat
 
   ! aux variables
   real, dimension(MDIM) :: sph_pos, vel, n_hat
@@ -1618,10 +1788,22 @@ subroutine calc_distance_to_spherical_wall(bndBox, deltaCell,&
 
   if ((r_dir /= 1) .and. (r_dir /= -1)) then
     print *, "soln", soln
+    print *, "r_in/r_out", r_in, r_out
+    print *, "sph_pos", sph_pos
+    print *, "cart_pos", cart_pos
+    print *, "vel", vel
+    print *, "n_hat", n_hat
     call Driver_abortFlash("calc_dist_to_spherical_wall: unknown r_dir.")
   end if
 
   d_r = min_time * clight
+
+  if (present(chk_stat)) then
+    print *, "RWall", soln
+    print *, "RVal", r_in, r_out
+    print *, "R_dir", r_dir
+    print *, "R_mintime", min_time
+  end if
 
 end subroutine calc_distance_to_spherical_wall
 
@@ -1656,10 +1838,11 @@ subroutine flip_vector(r_original, r_flipped)
 end subroutine flip_vector
 
 
-subroutine setup_theta_wall_linear_system(theta, sph_pos, n_hat,&
+subroutine setup_theta_wall_linear_system(theta, sph_pos, n_hat, dtheta,&
                                           a_sys, b_sys, c_sys)
   use Simulation_data, only : clight
   use spherical, only : get_cartesian_position
+  use Particles_data, only : pt_smlpush
   implicit none
 #include "constants.h"
 #include "Flash.h"
@@ -1667,6 +1850,7 @@ subroutine setup_theta_wall_linear_system(theta, sph_pos, n_hat,&
   ! Input/output
   real, intent(in) :: theta
   real, dimension(MDIM), intent(in) :: sph_pos, n_hat
+  real, intent(in) :: dtheta
   real, intent(out) :: a_sys, b_sys, c_sys
 
   ! aux variables
@@ -1704,7 +1888,8 @@ subroutine setup_theta_wall_linear_system(theta, sph_pos, n_hat,&
              - cart_pos_up(KAXIS)**2
 
   ! Mid-plane crossing
-  if (theta == 0.5*PI) then
+  !if (theta == 0.5*PI) then
+  if (abs(theta - 0.5*PI) <= dtheta*pt_smlpush) then
     a_sys = 0.0d0
     b_sys = n_hat(KAXIS)*clight
     c_sys = cart_pos_up(KAXIS)
@@ -1768,7 +1953,7 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
   ! aux variables
   real, dimension(MDIM) :: sph_pos, vel, n_hat
   real, dimension(MDIM) :: cart_pos
-  real :: theta_in, theta_out
+  real :: dtheta, theta_in, theta_out
   real :: a_sys, b_sys, c_sys
   real, dimension(4) :: soln
   integer :: ii
@@ -1776,6 +1961,9 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
   real :: time_to_midplane
 
   real, dimension(MDIM) :: sph_vel
+
+  ! Debugging
+  real, dimension(MDIM) :: r_hat
 
   ! Gathering MCP information
   sph_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
@@ -1789,17 +1977,26 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
   theta_in  = bndBox(LOW, JAXIS) +&
                 (cellID(JAXIS) - NGUARD - 1) * deltaCell(JAXIS)
   theta_out = theta_in + deltaCell(JAXIS)
+  dtheta = deltaCell(JAXIS)
 
   ! Initialization
   soln = -1.0d0
 
-  call setup_theta_wall_linear_system(theta_in, sph_pos, n_hat,&
+  call setup_theta_wall_linear_system(theta_in, sph_pos, n_hat, dtheta,&
                                           a_sys, b_sys, c_sys)
   call quadratic(a_sys, b_sys, c_sys, soln(1:2))
 
-  call setup_theta_wall_linear_system(theta_out, sph_pos, n_hat,&
+  call setup_theta_wall_linear_system(theta_out, sph_pos, n_hat, dtheta,&
                                           a_sys, b_sys, c_sys)
   call quadratic(a_sys, b_sys, c_sys, soln(3:4))
+
+  if (present(chk_stat)) then
+    print *, "QuickChk..", theta_in, theta_out
+    print *, "sph_pos", sph_pos
+    print *, "n_hat", n_hat
+    print *, "Lowersoln", soln(1:2)
+    print *, "Highersoln", soln(3:4)
+  end if
 
   ! Select the minimum positive time 
   min_time = huge(1.0d0)
@@ -1831,7 +2028,14 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
 
     ! Check direction
     call get_spherical_velocity(sph_pos, vel, sph_vel)
+    !if (sph_vel(2) > 1e3) then
+    !  print *, "v_theta not zero!"
+    !  print *, "sph_pos", sph_pos
+    !  print *, "vel", vel
+    !  print *, "sph_vel", sph_vel
+    !end if
 
+    ! Actually mcp can cross theta_out even if v_theta is neg.
     !if (((sph_vel(2) > 0) .and. (t_dir == -1)) .or. &
     !    ((sph_vel(2) < 0) .and. (t_dir == 1))) then
     !  print *, "Wrong theta-crossing"
@@ -1842,6 +2046,28 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
     !  print *, "sph_vel", sph_vel
     !  print *, "t_dir", t_dir
     !  print *, "soln", soln
+    !  r_hat = cart_pos / sqrt(dot_product(cart_pos, cart_pos))
+    !  print *, "r_hat", r_hat
+    !  print *, "n_hat", n_hat
+ 
+    !  if (t_dir == -1) then  ! positive v_theta but crossing inner
+    !    sph_pos(2) = sph_pos(2) + 0.001
+    !  end if
+    !  if (t_dir == 1) then  ! negative v_theta but crossing outer 
+    !    sph_pos(2) = sph_pos(2) - 0.001
+    !  end if
+    !  print *, "pushed sph_pos", sph_pos
+
+    !  call setup_theta_wall_linear_system(theta_in, sph_pos, n_hat,&
+    !                                      a_sys, b_sys, c_sys)
+    !  call quadratic(a_sys, b_sys, c_sys, soln(1:2))
+    !  print *, "redo theta_in sys", a_sys, b_sys, c_sys
+    !  call setup_theta_wall_linear_system(theta_out, sph_pos, n_hat,&
+    !                                      a_sys, b_sys, c_sys)
+    !  call quadratic(a_sys, b_sys, c_sys, soln(3:4))
+    !  print *, "redo theta_out sys", a_sys, b_sys, c_sys
+    !  print *, "new soln", soln
+
     !end if
 
   end if
@@ -1849,7 +2075,9 @@ subroutine calc_distance_to_theta_wall(bndBox, deltaCell,&
   if (present(chk_stat)) then
     print *, "ThetaWall", soln
     print *, "ThetaVal", theta_in, theta_out, 0.5*PI
+    print *, "dtheta", (theta_in - 0.5*PI), (theta_out - 0.5*PI)
     print *, "ThetaCheck", (theta_in > 0.5*PI), (theta_out > 0.5*PI)
+    print *, "Theta_mintime", min_time
   end if
 
 end subroutine calc_distance_to_theta_wall
@@ -2054,6 +2282,18 @@ subroutine distance_to_closest_wall(bndBox, deltaCell,&
 end subroutine distance_to_closest_wall
 
 
+! Error message
+!subroutine print_mcp_history(oldpos, oldvel, newpos, newvel)
+
+!  implicit none
+!#include "constants.h"
+!#include "Flash.h"
+!  real, dimension(MDIM) :: oldpos, oldvel, newpos, newvel
+
+
+!end subroutine print_mcp_history
+
+
 subroutine deposit_energy_momentum(solnVec, cellID, particle,&
                                    mcp_fate, dt, dtNew,&
                                    fleck, k_a, k_s, dvol)
@@ -2062,7 +2302,8 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   use Particles_data, only : pt_ABS_ID, pt_is_corrdl,&
                              pt_is_deposit_urad, pt_is_deposit_energy,&
                              pt_is_deposit_momentum, &
-                             pt_is_photoionization, pt_is_veldp
+                             pt_is_photoionization, pt_is_veldp,&
+                             pt_is_kt_opac
   use rhd, only : cellAddVar
   use relativity, only : transform_lab_to_comoving,&
                          transform_comoving_to_lab
@@ -2086,11 +2327,13 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   real :: dl, dl_corr, dtau
   real :: mcp_eps, mcp_energy
   real :: delta_e, rho, u_rad
-  real :: radflux
+  real :: radflux, radflux_a, radflux_s
   real :: theta, phi
   real, dimension(MDIM) :: x_hat, y_hat, z_hat
   real, dimension(MDIM) :: n_hat
   real :: a_x, a_y, a_z
+  real :: aa_x, aa_y, aa_z
+  real :: as_x, as_y, as_z
 
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
@@ -2136,7 +2379,8 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
 
   if (pt_is_deposit_urad) then
     mcp_energy = mcp_eps * old_weight
-    u_rad = mcp_energy * dl / (dvol * clight * dtNew)
+    !u_rad = mcp_energy * dl / (dvol * clight * dtNew)
+    u_rad = (mcp_energy / dvol) * (dl / (clight * dtNew))
     call cellAddVar(solnVec, cellID, URAD_VAR, u_rad)
   end if
 
@@ -2166,21 +2410,45 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
     kappa_a = k_ea / rho
     kappa_s = (k_es + k_s) / rho
 
-    radflux = mcp_energy * dl / (clight * dvol * dtNew)
+    ! use the Rosseland mean opacity for momentum deposition
+    ! in the KT atmo run.
+    if (pt_is_kt_opac) then
+      kappa_a = kappa_a*0.316
+      kappa_s = kappa_s*0.316
+    end if
+
+    radflux = (mcp_energy / dvol) * (dl / (clight * dtNew))
+    radflux_a = mcp_eps * old_weight * (1.0 - exp(-kappa_a*rho*dl))
+    radflux_s = mcp_eps * old_weight * (1.0 - exp(-kappa_s*rho*dl))
+    ! normalization to units of cm/s^2
+    radflux_a = radflux_a / dvol / (dtNew * clight) / rho
+    radflux_s = radflux_s / dvol / (dtNew * clight) / rho
 
     a_x = radflux * dot_product(n_hat, x_hat)
-    call cellAddVar(solnVec, cellID, ABMX_VAR, a_x*kappa_a)
-    call cellAddVar(solnVec, cellID, SCMX_VAR, a_x*kappa_s)
+    aa_x = radflux_a * dot_product(n_hat, x_hat)
+    as_x = radflux_s * dot_product(n_hat, x_hat)
+    !call cellAddVar(solnVec, cellID, ABMX_VAR, a_x*kappa_a)
+    !call cellAddVar(solnVec, cellID, SCMX_VAR, a_x*kappa_s)
+    call cellAddVar(solnVec, cellID, ABMX_VAR, aa_x)
+    call cellAddVar(solnVec, cellID, SCMX_VAR, as_x)
 
     if (NDIM >= 2) then
       a_y = radflux * dot_product(n_hat, y_hat)
-      call cellAddVar(solnVec, cellID, ABMY_VAR, a_y*kappa_a)
-      call cellAddVar(solnVec, cellID, SCMY_VAR, a_y*kappa_s)
+      aa_y = radflux_a * dot_product(n_hat, y_hat)
+      as_y = radflux_s * dot_product(n_hat, y_hat)
+      !call cellAddVar(solnVec, cellID, ABMY_VAR, a_y*kappa_a)
+      !call cellAddVar(solnVec, cellID, SCMY_VAR, a_y*kappa_s)
+      call cellAddVar(solnVec, cellID, ABMY_VAR, aa_y)
+      call cellAddVar(solnVec, cellID, SCMY_VAR, as_y)
  
       if (NDIM == 3) then
         a_z = radflux * dot_product(n_hat, z_hat)
-        call cellAddVar(solnVec, cellID, ABMZ_VAR, a_z*kappa_a)
-        call cellAddVar(solnVec, cellID, SCMZ_VAR, a_z*kappa_s)
+        aa_z = radflux_a * dot_product(n_hat, z_hat)
+        as_z = radflux_s * dot_product(n_hat, z_hat)
+        !call cellAddVar(solnVec, cellID, ABMZ_VAR, a_z*kappa_a)
+        !call cellAddVar(solnVec, cellID, SCMZ_VAR, a_z*kappa_s)
+        call cellAddVar(solnVec, cellID, ABMZ_VAR, aa_z)
+        call cellAddVar(solnVec, cellID, SCMZ_VAR, as_z)
       end if
     end if
 
