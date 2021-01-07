@@ -111,7 +111,9 @@ module Particles_data
   integer, save :: pt_startTagNumber=0
 
 !! Parameters needed for IMC
+  logical, save :: pt_use_fromPos
   logical, save :: pt_is_eff_scattering, pt_is_grey
+  logical, save :: pt_is_kt_opac
   integer, save    :: pt_maxnewnum, pt_max_rt_iterations
   real, save    :: pt_es_alpha
   real, save    :: pt_smlpush
@@ -137,6 +139,7 @@ module Particles_data
   logical, save :: pt_is_iso_face_vel
   logical, save :: pt_is_radial_face_vel
   integer, save :: pt_num_fmcps_tstep
+  integer, save :: pt_num_fmcps_percell 
 
   logical, save :: pt_PointEmission, pt_PointPulse
   real, save    :: pt_PointPulseErad

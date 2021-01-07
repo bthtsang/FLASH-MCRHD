@@ -66,6 +66,9 @@ PARAMETER pt_marshak_eos     BOOLEAN FALSE
 D pt_is_grey         Whether to use grey opacity for thermal rad.
 PARAMETER pt_is_grey BOOLEAN TRUE
 
+D pt_is_kt_opac         Whether to use the \propto T^2 opacity law from KT12.
+PARAMETER pt_is_kt_opac BOOLEAN FALSE
+
 D pt_grey_abs_opac        Constant gas absorption opacity for thermal rad.
 PARAMETER pt_grey_abs_opac    REAL 1.0
 
@@ -113,6 +116,9 @@ PARAMETER pt_is_radial_face_vel   BOOLEAN  TRUE
 
 D pt_num_fmcps_tstep      Number of face MCP per block per timestep
 PARAMETER pt_num_fmcps_tstep     INTEGER 10
+
+D pt_num_fmcps_percell    Number of face MCP per cell at cell centers
+PARAMETER pt_num_fmcps_percell     INTEGER 0
 
 D pt_PointEmission        Whether or not to emit radiation from a point
 PARAMETER pt_PointEmission        BOOLEAN FALSE
@@ -174,6 +180,8 @@ PARAMETER pt_temp_floor           REAL  0.0
 D pt_is_veldp             Whether to turn on velocity-dependent correction
 PARAMETER pt_is_veldp                BOOLEAN FALSE
 
+D pt_use_fromPos          Whether to use the Grid_getBlkIDFromPos
+PARAMETER pt_use_fromPos             BOOLEAN FALSE
 
 ### Ionization specific runtime parameters
 # It should be contained somewhere else

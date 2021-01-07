@@ -4,7 +4,8 @@ module opacity
   contains
 
 subroutine calc_abs_opac(cellID, solnVec, energy, ka)
-  use Particles_data, only : pt_is_grey, pt_grey_abs_opac, pt_dens_threshold
+  use Particles_data, only : pt_is_grey, pt_grey_abs_opac, pt_dens_threshold,&
+                             pt_is_kt_opac
   use Driver_interface,  ONLY : Driver_abortFlash
   implicit none
 
@@ -18,13 +19,20 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
   real, intent(out) :: ka
 
   ! aux variables
-  real :: rho, temp
+  real :: rho, temp, temp_opac
 
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
   temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   if (pt_is_grey) then
     ka = pt_grey_abs_opac
+
+    if (pt_is_kt_opac) then
+      temp_opac = temp
+      if (temp >= 150.0) temp_opac = 150.0
+      ka = 0.10*(temp_opac/10.0)**2
+    end if 
+
     ka = ka * rho
 
     if (rho .lt. pt_dens_threshold) ka = 0.0d0

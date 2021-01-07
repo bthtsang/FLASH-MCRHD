@@ -116,10 +116,13 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_es_alpha", pt_es_alpha)
   call RuntimeParameters_get ("pt_smlpush", pt_smlpush)
   call RuntimeParameters_get ("pt_is_grey", pt_is_grey)
+  call RuntimeParameters_get ("pt_is_kt_opac", pt_is_kt_opac)
   call RuntimeParameters_get ("pt_is_eff_scattering", pt_is_eff_scattering)
   call RuntimeParameters_get ("pt_maxnewnum", pt_maxnewnum)
   call RuntimeParameters_get ("pt_max_rt_iterations", pt_max_rt_iterations)
   call RuntimeParameters_get ("pt_half_rt_timesteps", pt_half_rt_timesteps)
+
+  call RuntimeParameters_get ("pt_use_fromPos", pt_use_fromPos)
  
   call RuntimeParameters_get ("pt_initradfield_num", pt_initradfield_num)
 
@@ -143,6 +146,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_iso_face_vel", pt_is_iso_face_vel)
   call RuntimeParameters_get ("pt_is_radial_face_vel", pt_is_radial_face_vel)
   call RuntimeParameters_get ("pt_num_fmcps_tstep", pt_num_fmcps_tstep)
+  call RuntimeParameters_get ("pt_num_fmcps_percell", pt_num_fmcps_percell)
 
   ! Point Emission
   call RuntimeParameters_get ("pt_PointEmission", pt_PointEmission)

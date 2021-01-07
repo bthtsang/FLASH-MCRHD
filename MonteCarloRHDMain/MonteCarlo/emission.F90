@@ -327,6 +327,165 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
 end subroutine thermal_emission
 
+! Added for Lucy test in FLASH
+subroutine radioactive_emission(blockID, solnVec, dtNew,&
+           now_num, now_pos, now_time, &
+           now_energy, now_vel, now_weight)
+  use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
+              pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
+              pt_is_veldp, pt_marshak_eos
+  use Grid_interface, only : Grid_getBlkIndexLimits,&
+              Grid_getBlkBoundBox, Grid_getDeltas
+  use Simulation_data, only : R, sigma, a_rad
+  use Eos_data, only : eos_singleSpeciesA
+  use opacity, only : calc_abs_opac
+  use Driver_interface, only : Driver_abortFlash
+  use rhd, only : cellAddVar
+  use new_mcp, only : sample_cell_position, sample_iso_velocity,&
+                      sample_time, sample_energy
+  use relativity, only : transform_comoving_to_lab
+
+  implicit none
+#include "Flash.h"
+#include "constants.h"
+
+  ! Input/Output
+  integer, intent(in) :: blockID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(in) :: dtNew
+  integer, intent(out) :: now_num
+  real, dimension(MDIM,pt_maxnewnum), intent(out) :: now_pos, now_vel
+  real, dimension(pt_maxnewnum), intent(out) :: now_time, now_energy, now_weight
+
+  ! aux parameters
+  integer :: i, j, k, ii
+  integer, dimension(MDIM) :: cellID
+  integer, dimension(2, MDIM) :: blkLimits, blkLimitsGC
+  real, dimension(LOW:HIGH, MDIM) :: bndBox
+  real, dimension(MDIM) :: deltaCell
+  real :: dV, temp, rho, gamc, ka, kp, dE, dEMIE, c_V, beta, fn
+  real, parameter :: eps_dummy = 1.0d-10
+
+  real, dimension(MDIM) :: newxyz, newvel
+  real :: weight_per_mcp, dE_per_mcp, dtNow, newenergy
+  real, dimension(NPART_PROPS) :: newparticle
+  real :: dshift
+
+  ! Initialization
+  now_num = 0
+  now_pos = 0.0d0
+  now_vel = 0.0d0
+  now_time = 0.0d0
+  now_energy = 0.0d0
+  now_weight = 0.0d0
+
+  if (.not. pt_ThermalEmission) return
+
+  ! Obtain block info
+  call Grid_getBlkIndexLimits(blockID, blkLimits, blkLimitsGC)
+  call Grid_getBlkBoundBox(blockID, bndBox)
+  call Grid_getDeltas(blockID, deltaCell) 
+
+  do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
+    do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
+      do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
+
+        cellID = (/ i, j, k /)
+
+        CALL Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
+
+        ! Obtaining grid info of current cell
+        temp = solnVec(TEMP_VAR, i, j, k)
+        rho  = solnVec(DENS_VAR, i, j, k)
+        gamc = solnVec(GAMC_VAR, i, j, k)
+
+        dE = 0.0d0
+        if (pt_is_grey) then
+          call calc_abs_opac(cellID, solnVec, eps_dummy, ka)
+          ! ka here is already in co-moving frame
+          dE = 4.0 * ka * sigma * (temp**4.0) * dV * dtNew
+          kp = ka
+        else
+          call Driver_abortFlash("thermal_emission: non-grey thermal emission&
+                                  not yet implemented.")
+        end if
+
+        fn = 1.0d0
+        if ((pt_is_eff_scattering) .and. (dE .ne. 0.0d0)) then
+          c_V = R / ((gamc - 1.0d0)*eos_singleSpeciesA)
+          ! IMC beta
+          beta = (4.0d0 * a_rad * (temp**3)) / (rho * c_V)
+
+          ! Override when Marshak EOS is turned on
+          if (pt_marshak_eos) then
+            c_V = 4.0 * a_rad * (temp**4)  ! Not used
+            beta = 1.0 !0.25
+          end if
+
+          call comp_fleck_factor(kp, beta, dtNew, fn)
+        end if
+        solnVec(FLEC_VAR,i,j,k) = fn
+
+        dE = fn * dE
+
+        dEMIE = -dE / (rho * dV)
+
+        ! Actual emission
+        if (dE .gt. 0.0d0) then
+          dE_per_mcp = dE / pt_num_tmcps_tstep
+
+          call cellAddVar(solnVec, cellID, EMIE_VAR, dEMIE)
+
+          ! Loop to create new MCPs
+          do ii = 1, pt_num_tmcps_tstep
+
+            call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
+
+            call sample_time(dtNew, dtNow)
+
+            call sample_iso_velocity(newvel)
+
+            call sample_energy(solnVec, cellID, newenergy)
+            weight_per_mcp = dE_per_mcp / newenergy
+
+            ! Initialization
+            newparticle = 0.0
+            ! Put attributes into a new particle array for
+            ! easier Lorentz transformation
+            newparticle(POSX_PART_PROP:POSZ_PART_PROP) = newxyz
+            newparticle(VELX_PART_PROP:VELZ_PART_PROP) = newvel
+            newparticle(ENER_PART_PROP) = newenergy
+            newparticle(TREM_PART_PROP) = dtNow
+            newparticle(NUMP_PART_PROP) = weight_per_mcp
+
+            ! Convert to lab frame if velocity dependent is on
+            if (pt_is_veldp) then
+              ! call some conversion function to convert
+              call transform_comoving_to_lab(cellID, solnVec,&
+                            newparticle, dshift) 
+            end if
+
+
+            ! Record the MCP attributes
+            now_time(now_num + ii)   = newparticle(TREM_PART_PROP)
+            now_pos(:, now_num + ii) = newparticle(POSX_PART_PROP:&
+                                                   POSZ_PART_PROP)
+            now_energy(now_num + ii) = newparticle(ENER_PART_PROP)
+            now_vel(:, now_num + ii) = newparticle(VELX_PART_PROP:&
+                                                   VELZ_PART_PROP)
+            now_weight(now_num + ii) = newparticle(NUMP_PART_PROP)
+          end do
+
+          now_num = now_num + pt_num_tmcps_tstep
+          
+        end if
+
+      end do
+    end do
+  end do
+
+end subroutine radioactive_emission
+
 subroutine point_emission(blockID, solnVec, dtNew,&
                           now_num, now_pos, now_time,&
                           now_energy, now_vel, now_weight)
@@ -475,7 +634,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_FaceEmissionSide, pt_FaceEmissionAxis,&
                              pt_FacePlanckTemp, pt_constFaceFlux,&
                              pt_is_radial_face_vel, pt_is_iso_face_vel,&
-                             pt_is_therm_face_vel, pt_smlpush
+                             pt_is_therm_face_vel, pt_smlpush,&
+                             pt_num_fmcps_percell
   use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
                              Grid_getBlkBC, Grid_getBlkPhysicalSize
   use Grid_data, only: gr_geometry
@@ -519,6 +679,15 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   real :: weight_per_mcp, dE_per_mcp, dtNow, newenergy
 
   real :: v_r
+  integer :: num_face_mcps
+  ! For per-cell face emission
+  integer, parameter :: ycoordsize = NYB
+  real, dimension(ycoordsize) :: ycoords
+  integer, parameter :: xcoordsize = NXB
+  real, dimension(xcoordsize) :: xcoords
+  integer, parameter :: zcoordsize = NZB
+  real, dimension(zcoordsize) :: zcoords
+  integer :: face_i, face_j
 
   ! Initialization
   now_num = 0
@@ -556,6 +725,36 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 !    end if
   end if
 
+  ! Default to fmcps number
+  num_face_mcps = pt_num_fmcps_tstep
+  ! Set to emit mcps per cell if pt_num_fmcps_percell /= 0
+  if (pt_num_fmcps_percell > 0) then
+    ! Gather cell center coordinates
+    ! xyz here can be Cartesian or Spherical
+    call Grid_getCellCoords(IAXIS, blockID, CENTER, .false.,&
+                            xcoords, xcoordsize)
+
+    if (NDIM > 1) then
+      call Grid_getCellCoords(JAXIS, blockID, CENTER, .false.,&
+                              ycoords, ycoordsize)
+
+      if (NDIM > 2) then
+        call Grid_getCellCoords(KAXIS, blockID, CENTER, .false.,&
+                                    zcoords, zcoordsize)
+      end if
+    end if
+
+    ! Set the number of new MCPs according to NDIM
+    num_face_mcps = pt_num_fmcps_percell  ! set to percell
+    if (NDIM > 1) then                    ! then multiply by number of cells
+      num_face_mcps = num_face_mcps * NXB
+
+      if (NDIM == 3) then
+        num_face_mcps = num_face_mcps * NYB
+      end if
+    end if
+  end if
+
   do ii = LOW, HIGH
     do jj = IAXIS, KAXIS
 
@@ -565,13 +764,32 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 
         dE = flux * FaceArea * dtNew
 
-        dE_per_mcp = dE / pt_num_fmcps_tstep
+        dE_per_mcp = dE / num_face_mcps !pt_num_fmcps_tstep
 
-        do i = 1, pt_num_fmcps_tstep
+        do i = 1, num_face_mcps !pt_num_fmcps_tstep
           call sample_time(dtNew, dtNow)
 
           ! newxyz is in spherical cooridnates here
           call sample_blk_position(bndBox, newxyz)
+
+          ! if percell is on, override with cell coordinates
+          if (pt_num_fmcps_percell > 0) then
+            ! assign face_i and face_j
+            ! Assuming NXB = NYB = NZB
+            face_i = int((i - 1) / NXB) + 1
+            face_j = modulo((i - 1), NXB) + 1
+
+            if (jj == IAXIS) then
+              newxyz(JAXIS) = ycoords(face_i)
+              newxyz(KAXIS) = zcoords(face_j)
+            else if (jj == JAXIS) then
+              newxyz(IAXIS) = xcoords(face_i)
+              newxyz(KAXIS) = zcoords(face_j)
+            else if (jj == KAXIS) then
+              newxyz(IAXIS) = xcoords(face_i)
+              newxyz(JAXIS) = ycoords(face_j)
+            end if
+          end if
           ! Impose the face value along FaceAxis
           newxyz(jj) = bndBox(ii, jj)
           if (ii .EQ. HIGH) newxyz(jj) = (1.0d0 - pt_smlpush)*newxyz(jj)
@@ -639,7 +857,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           ! End of sampling the face MCPs
         end do
 
-        now_num = now_num + pt_num_fmcps_tstep
+        now_num = now_num + num_face_mcps !pt_num_fmcps_tstep
       end if
     end do
   end do
@@ -696,6 +914,9 @@ subroutine get_face_area(dir, axis, bndBox, FaceArea)
     if (NDIM == 3) then
       FaceArea = FaceArea * r_in*r_in&
                           * (phi_out - phi_in)&
+                          * (cos(theta_in) - cos(theta_out))
+    else if (NDIM == 2) then
+      FaceArea = 2.0 * PI * r_in*r_in&
                           * (cos(theta_in) - cos(theta_out))
     else
       call Driver_abortFlash("face_emission: not yet implemented&

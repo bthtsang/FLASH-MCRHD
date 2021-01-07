@@ -223,7 +223,7 @@ subroutine reflect_velocity(pos, vel, axis, face, vel_reflected)
   real :: vr, vt, vp
 
 
-  if (NDIM == 3) then
+  if (NDIM <= 3) then
     theta = pos(JAXIS)
     phi   = pos(KAXIS)
 
@@ -248,29 +248,8 @@ subroutine reflect_velocity(pos, vel, axis, face, vel_reflected)
 
     sph_vel = (/ vr, vt, vp /)
 
-    ! Benny debugging
-    if ((face == 1) .and. (vt > 0.0)) then
-      print *, "wrong face 1"
-      print *, "pos1", pos
-      print *, "vel1", vel
-      print *, "wrongflip1", sph_vel 
-    end if
-    if ((face == 2) .and. (vt < 0.0)) then
-      print *, "wrong face 2"
-      print *, "pos2", pos
-      print *, "vel2", vel
-      print *, "wrongflip2", sph_vel 
-    end if
-
     sph_vel_reflected = sph_vel
     sph_vel_reflected(axis) = -sph_vel_reflected(axis)
-
-    ! Benny debugging
-!    if (axis == 2) then
-!      print *, "theta crossing", face
-!      print *, "flipping", sph_vel
-!      print *, "flipped", sph_vel_reflected
-!    end if
 
     ! Convert it back to Cartesian cooridinates
     x_hat = (/ 1.0d0, 0.0d0, 0.0d0 /)
