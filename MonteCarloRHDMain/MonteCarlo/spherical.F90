@@ -132,7 +132,7 @@ subroutine get_spherical_velocity(pos, vel, sph_vel)
   real :: vr, vt, vp
 
 
-  if (NDIM == 3) then
+  if (NDIM <= 3) then
     theta = pos(JAXIS)
     phi   = pos(KAXIS)
 
