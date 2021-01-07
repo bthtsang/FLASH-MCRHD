@@ -5,7 +5,7 @@ module new_mcp
 
 subroutine sample_cell_position(bndBox, deltaCell, cellID, newxyz)
   use Grid_data, only: gr_geometry
-  use random, only : rand
+  use random, only : randnozero
   implicit none
 
 #include "constants.h"
@@ -23,18 +23,24 @@ subroutine sample_cell_position(bndBox, deltaCell, cellID, newxyz)
   real :: cos_theta_in, cos_theta_out, cos_theta_rand
   real :: phi_in, phi_out, phi_rand
   real :: xi
+  real :: small_frac = 1.0e-15
 
   newxyz = 1.0d0 ! initialization 
 
   if (gr_geometry == SPHERICAL) then
-    xi = rand()
+    xi = randnozero()
     r_in  = bndBox(LOW, IAXIS) + (cellID(IAXIS) - NGUARD - 1) * deltaCell(IAXIS)
     r_out = r_in + deltaCell(IAXIS)
+    ! resample for safety
+    if (xi <= small_frac*(r_in/(r_out - r_in))**3) xi = randnozero()
     r_rand = (r_in**3 + xi*(r_out - r_in)**3 )**(1.0/3.0)
     newxyz(IAXIS) = r_rand
 
     if (r_rand == r_in) then
-      print *, "sampled on edge", xi, r_rand, r_in, r_out
+      print *, "sampled on edge", xi, r_rand 
+      print *, "bndBox", bndBox(:, IAXIS)
+      print *, "deltaCel", deltaCell
+      print *, "rin/out", r_in, r_out
     end if
 
     if (NDIM >= 2) then
@@ -43,26 +49,26 @@ subroutine sample_cell_position(bndBox, deltaCell, cellID, newxyz)
       cos_theta_in  = cos(theta_in)
       cos_theta_out = cos(theta_out)
 
-      cos_theta_rand = cos_theta_out + rand() * (cos_theta_in - cos_theta_out)
+      cos_theta_rand = cos_theta_out + randnozero() * (cos_theta_in - cos_theta_out)
       theta_rand = acos(cos_theta_rand)
       newxyz(JAXIS) = theta_rand
 
       if (NDIM == 3) then
         phi_in  = bndBox(LOW, KAXIS) + (cellID(KAXIS) - NGUARD - 1)*deltaCell(KAXIS)
         phi_out = phi_in + deltaCell(KAXIS)
-        phi_rand = phi_in + (phi_out - phi_in) * rand()
+        phi_rand = phi_in + (phi_out - phi_in) * randnozero()
         newxyz(KAXIS) = phi_rand
       end if
     end if
 
   else if (gr_geometry == CARTESIAN) then
 
-    newxyz(IAXIS) = bndBox(LOW, IAXIS) + (cellID(IAXIS) - NGUARD - 1 + rand()) * deltaCell(IAXIS)
+    newxyz(IAXIS) = bndBox(LOW, IAXIS) + (cellID(IAXIS) - NGUARD - 1 + randnozero()) * deltaCell(IAXIS)
     if (NDIM >= 2) then
-      newxyz(JAXIS) = bndBox(LOW, JAXIS) + (cellID(JAXIS) - NGUARD - 1 + rand()) * deltaCell(JAXIS)
+      newxyz(JAXIS) = bndBox(LOW, JAXIS) + (cellID(JAXIS) - NGUARD - 1 + randnozero()) * deltaCell(JAXIS)
 
       if (NDIM == 3) then
-        newxyz(KAXIS) = bndBox(LOW, KAXIS) + (cellID(KAXIS) - NGUARD - 1 + rand()) * deltaCell(KAXIS)
+        newxyz(KAXIS) = bndBox(LOW, KAXIS) + (cellID(KAXIS) - NGUARD - 1 + randnozero()) * deltaCell(KAXIS)
       end if
     end if
 
@@ -108,7 +114,7 @@ subroutine sample_blk_position(bndBox, newxyz)
       theta_rand = acos(cos_theta_rand)
       newxyz(JAXIS) = theta_rand
 
-      if (NDIM == 3) then
+      if (NDIM <= 3) then
         phi_in  = bndBox(LOW, KAXIS)
         phi_out = bndBox(HIGH, KAXIS)
         phi_rand = phi_in + (phi_out - phi_in) * rand()
