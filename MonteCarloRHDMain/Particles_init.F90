@@ -135,6 +135,10 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_abs_threshold", pt_abs_threshold)
   call RuntimeParameters_get ("pt_num_tmcps_tstep", pt_num_tmcps_tstep)
 
+  ! Radioactive decay emission
+  call RuntimeParameters_get ("pt_RadioEmission", pt_RadioEmission)
+  call RuntimeParameters_get ("pt_num_rmcps_tstep", pt_num_rmcps_tstep)
+
   ! Face Emission
   call RuntimeParameters_get ("pt_FaceEmission", pt_FaceEmission)
   call RuntimeParameters_get ("pt_is_FacePlanck", pt_is_FacePlanck)

@@ -157,6 +157,9 @@ module Particles_data
   real, save    :: pt_abs_threshold
   integer, save :: pt_num_tmcps_tstep
 
+  logical, save :: pt_RadioEmission
+  integer, save :: pt_num_rmcps_tstep
+
   real, save    :: pt_energy_min_eV, pt_energy_max_eV
   real, save    :: pt_energy_min_erg, pt_energy_max_erg
 

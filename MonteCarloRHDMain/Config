@@ -87,6 +87,12 @@ PARAMETER pt_abs_threshold         REAL  1.0e-8
 D pt_num_tmcps_tstep      Number of thermal MCPs per cell per timestep
 PARAMETER pt_num_tmcps_tstep     INTEGER 2
 
+D pt_RadioEmission     Whether to turn on radioactive decay emission
+PARAMETER pt_RadioEmission       BOOLEAN FALSE
+
+D pt_num_rmcps_tstep      Number of radioactive MCPs per cell per timestep
+PARAMETER pt_num_rmcps_tstep     INTEGER 2
+
 D pt_FaceEmission           Whether or not turning on face emission
 PARAMETER pt_FaceEmission        BOOLEAN FALSE
 
