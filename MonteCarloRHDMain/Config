@@ -209,5 +209,11 @@ PARAMETER pt_is_caseB           BOOLEAN TRUE
 D pt_is_rm_mcps_caseB          Whether to remove MCPs upon case B es
 PARAMETER pt_is_rm_mcps_caseB   BOOLEAN FALSE
 
-D pt_nH1_threshold        Whether to turn on collisional photoionization
+D pt_nH1_threshold             Whether to turn on collisional photoionization
 PARAMETER pt_nH1_threshold           REAL  1.0e-10
+
+D pt_pi_avg_cooling             Thermal energy lost by each recombining electron
+PARAMETER pt_pi_avg_cooling           REAL  2.4
+
+D pt_is_cont_photo             Whether to continuously update tau for photoionization
+PARAMETER pt_is_cont_photo        BOOLEAN TRUE

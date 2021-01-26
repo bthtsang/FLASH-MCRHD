@@ -175,6 +175,9 @@ module Particles_data
                    pt_is_coll_ionization, pt_is_caseB,&
                    pt_is_rm_mcps_caseB
   real, save    :: pt_nH1_threshold
+  real, save    :: pt_pi_avg_cooling
+  logical, save :: pt_is_cont_photo
+
   real, save    :: pt_temp_floor
 
   logical, save    :: pt_is_veldp

@@ -184,6 +184,9 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_caseB", pt_is_caseB)
   call RuntimeParameters_get ("pt_is_rm_mcps_caseB", pt_is_rm_mcps_caseB)
   call RuntimeParameters_get ("pt_nH1_threshold", pt_nH1_threshold)
+  call RuntimeParameters_get ("pt_is_cont_photo", pt_is_cont_photo)
+  call RuntimeParameters_get ("pt_pi_avg_cooling", pt_pi_avg_cooling)
+
   call RuntimeParameters_get ("pt_temp_floor", pt_temp_floor)
 
   ! parameter for velocity-dependent, or special relativistic applications
