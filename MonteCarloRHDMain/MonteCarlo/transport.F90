@@ -83,7 +83,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real :: k_a, k_s
   real :: fleck, min_time, min_dist
   real :: k_a_cmf, k_s_cmf
-  real :: k_ion, k_ion_ea, k_ion_es, fleckp, nH1, N_H1
+  real :: k_ion, k_ion_ea, k_ion_es, fleckp
+  real :: nH, N_H, nH1, N_H1
   integer :: mcp_fate
   logical :: is_empty_cell_event
 
@@ -240,9 +241,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 #ifdef FLASH_MCRHD_IONIZATION
         fleckp = solnVec(FLEP_VAR, cellID(1), cellID(2), cellID(3))
         call calc_pi_opac(cellID, solnVec,&
-                particles(ENER_PART_PROP,i), k_ion, nH1)
+                particles(ENER_PART_PROP,i), k_ion, nH, nH1)
 #endif
         N_H1 = nH1*dvol
+        N_H  = nH*dvol
 
         !if (fleckp < 0.5) then
         !  print *, "before fate", fleckp, solnVec(FLEP_VAR, cellID(1), cellID(2), cellID(3))
@@ -258,7 +260,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         end if
 
         call determine_fate(bndBox, deltaCell, particles(:, i), cellID,&
-                            k_a, k_s, fleck, k_ion, fleckp, N_H1,&
+                            k_a, k_s, fleck, k_ion, fleckp, N_H, N_H1,&
                             mcp_fate, xcellID, min_time, min_dist,&
                             is_empty_cell_event)
 
@@ -326,7 +328,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
                                          mcp_fate, dt, dtNew,&
-                                         fleckp, k_ion, dvol,&
+                                         fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
 
             ! Place in census
@@ -353,7 +355,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
-                                         fleckp, k_ion, dvol,&
+                                         fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
             if (mcp_fate == pt_SCAT_ID) then
               call scatter_mcp(solnVec, cellID, particles(:,i),&
@@ -446,7 +448,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
-                                         fleckp, k_ion, dvol,&
+                                         fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
 
             if (.not. is_empty_cell_event) then
@@ -518,7 +520,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
-                                         fleckp, k_ion, dvol,&
+                                         fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
 
             ! Get the updated cell if MCP is not moving out of block, or
@@ -894,7 +896,7 @@ end subroutine transport_mcps
 
 
 subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
-                          fleck, k_ion, fleckp, N_H1, mcp_fate, xcellID,&
+                          fleck, k_ion, fleckp, N_H, N_H1, mcp_fate, xcellID,&
                           min_time, min_dist, is_empty_cell_event)
   use Particles_data, only : pt_STAY_ID, pt_SCAT_ID, pt_ESCAT_ID,&
                              pt_ABS_ID, pt_CROSS_ID, pt_PION_ESCAT_ID,&
@@ -910,7 +912,7 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   real, dimension(MDIM), intent(in) :: deltaCell
   real, dimension(NPART_PROPS), intent(in) :: particle
   integer, dimension(MDIM) :: cellID
-  real, intent(in) :: k_a, k_s, fleck, k_ion, fleckp, N_H1
+  real, intent(in) :: k_a, k_s, fleck, k_ion, fleckp, N_H, N_H1
   integer, intent(out) :: mcp_fate
   integer, dimension(MDIM), intent(out) :: xcellID
   real, intent(out) :: min_time, min_dist
@@ -965,9 +967,18 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   ! d_i = (d_stay, d_coll, d_boundary, d_absorption)
   call calc_distance_to_collision(k_s_sample, d_i(2))
   !call calc_distance_to_absorption(k_a_sample, ini_weight, now_weight, d_i(4))
-  call calc_distance_to_absorption_with_ionization(k_a_sample, N_H1,&
+  call calc_distance_to_absorption_with_ionization(k_a_sample, N_H, N_H1,&
                                       ini_weight, now_weight, d_i(4),&
                                       is_empty_cell)
+
+  ! Debugging
+  if ((d_i(2) < 0.0) .or. (d_i(4) < 0.0)) then
+    print *, "Neg dist."
+    print *, "dist_coll.", d_i(2)
+    print *, "dist_abs.", d_i(4)
+  end if
+
+
 
   ! distance to the closest cell boundary
   call distance_to_closest_wall(bndBox, deltaCell, particle, cellID,& 
@@ -1089,17 +1100,20 @@ subroutine calc_distance_to_absorption(k_abs, ini_num, now_num, d_abs)
 end subroutine calc_distance_to_absorption
 
 
-subroutine calc_distance_to_absorption_with_ionization(k_abs, N_H1,&
+subroutine calc_distance_to_absorption_with_ionization(k_abs, N_H, N_H1,&
                                   ini_num, now_num, d_ab, is_cell_empty)
-  use Particles_data, only : pt_is_photoionization, pt_abs_threshold
+  use Particles_data, only : pt_is_photoionization, pt_abs_threshold,&
+                             pt_is_cont_photo
 
   implicit none
   ! Input/Output
-  real, intent(in)  :: k_abs, N_H1, ini_num, now_num
+  real, intent(in)  :: k_abs, N_H, N_H1, ini_num, now_num
   real, intent(out) :: d_ab
   logical, intent(out) :: is_cell_empty
 
   ! aux variable
+  real :: X_n
+  real :: w_left
   real :: d_exp, d_ex
 
   is_cell_empty = .false.
@@ -1109,13 +1123,33 @@ subroutine calc_distance_to_absorption_with_ionization(k_abs, N_H1,&
     if (.not. pt_is_photoionization) then
       d_ab = log(now_num / (pt_abs_threshold * ini_num)) / k_abs
     else 
+      ! Benny (01-22-2021): for now assume only ionizing or dust, not both.
+      w_left = now_num - pt_abs_threshold*ini_num
       if (N_H1 >= now_num) then
-        ! d_ab set by exp(-tau)
-        d_ab = log(now_num / (pt_abs_threshold * ini_num)) / k_abs
+        if (pt_is_cont_photo) then
+          ! new version
+          d_ab = w_left / (N_H1 - w_left) / k_abs
+        else
+          ! old version
+          ! d_ab set by exp(-tau)
+          d_ab = log(now_num / (pt_abs_threshold * ini_num)) / k_abs
+        end if
       else
-        d_exp = log(now_num / (pt_abs_threshold * ini_num)) / k_abs
+
+        if (pt_is_cont_photo) then
+          ! new version
+          !d_exp = w_left / (N_H1 - w_left) / k_abs
+          d_exp = huge(1.0)
+          ! new d_ex set by available number of neutral hydrogen
+          X_n = N_H1 / N_H
+          d_ex  = (X_n/pt_abs_threshold - 1) / k_abs
+        else
+          ! old version
+          d_exp = log(now_num / (pt_abs_threshold * ini_num)) / k_abs
         ! d_ex is set by available number of neutral hydrogen
-        d_ex  = -log(1.0 - (N_H1 / now_num)) / k_abs
+          d_ex  = -log(1.0 - (N_H1 / now_num)) / k_abs
+        end if
+
 
         if (d_exp < d_ex) then
           d_ab = d_exp
@@ -1123,6 +1157,7 @@ subroutine calc_distance_to_absorption_with_ionization(k_abs, N_H1,&
           d_ab = d_ex
           is_cell_empty = .true.
         end if
+
       end if
     end if
   end if

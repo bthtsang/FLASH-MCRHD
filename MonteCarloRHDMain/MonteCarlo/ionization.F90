@@ -4,7 +4,7 @@ module ionization
   contains
 
 ! Photoionization absorption coefficient
-subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH1)
+subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH, nH1)
   use Particles_data, only : pt_is_photoionization, pt_dens_threshold,&
                              pt_nH1_threshold
   use Driver_interface, only : Driver_abortFlash
@@ -20,11 +20,12 @@ subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH1)
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
   real, intent(in) :: energy
-  real, intent(out) :: kpi, nH1
+  real, intent(out) :: kpi, nH, nH1
 
   ! aux variables
   real :: rho, temp
   real :: h1, Ah1, energy_eV
+  real :: hp, Ahp
 
   kpi = 0.0d0
   nH1 = 1.0d0
@@ -38,11 +39,14 @@ subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH1)
   !if ((NSPECIES /= 0) .and. (rho >= pt_dens_threshold)) then
   if (NSPECIES /= 0) then
     h1 = solnVec(H1_SPEC, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+    hp = solnVec(HP_SPEC, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
     call Multispecies_getProperty(H1_SPEC, A, Ah1)
     nH1 = rho*h1/(Ah1*mH)
+    nH =  rho*(h1+hp)/(Ah1*mH)
     energy_eV = energy / ev2erg
 
-    if ((energy_eV >= 13.6) .and. (nH1 > pt_nH1_threshold)) then
+    !if ((energy_eV >= 13.6) .and. (nH1 > pt_nH1_threshold)) then
+    if ((energy_eV >= 13.6) .and. (h1 > pt_nH1_threshold)) then
       kpi = nH1*sigma_pi ! assume temperature-independent
     end if
   else ! NSPECIES=0, not having separate species for HI and HII
@@ -159,7 +163,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
                              pt_nH1_threshold
   use Grid_interface, only : Grid_getBlkIndexLimits 
   use Multispecies_interface, only : Multispecies_getProperty
-  use Simulation_data, only : mH, ev2erg
+  use Simulation_data, only : mH, ev2erg, kB
   implicit none
 
 #include "constants.h"
@@ -175,10 +179,12 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
   integer, dimension(MDIM) :: cellID
   integer :: i, j, k
   real :: rho, temp
-  real :: h1, hp, ele, Ah1, Ae, nH, nH1, nHp
+  real :: h1, hp, ele, Ah1, Ae
+  real :: nH, nH1, nHp, ne
   real :: k_coll, alpha_B, gamma_n, fleck_n
   real :: recomb_rate, cooling_rate
 
+  real :: Lambda_rec
   real :: avg_recomb_energy
 
   ! exit if photoionization is off
@@ -207,6 +213,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
         nH  = rho*(h1+hp)/(Ah1*mH)
         nH1 = rho*h1/(Ah1*mH)
         nHp = nH - nH1
+        ne  = rho*ele/(Ae*mH)
 
         if (temp < 10.0) then
           print *, "FailT", temp
@@ -235,7 +242,8 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
 
         recomb_rate = 0.0
         cooling_rate = 0.0
-        if (nHp > pt_nH1_threshold) then
+        !if (nHp > pt_nH1_threshold) then
+        if (hp > pt_nH1_threshold) then
           if (pt_is_es_photoionization) then
             !recomb_rate = (gamma_n - 1.0)*nH1& 
             !            + gamma_n*(nH*nH - nH1*nH1)*alpha_B*dtnow&
@@ -257,6 +265,11 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
 
         ! Setting the associated recombination cooling rate
         cooling_rate = avg_recomb_energy*recomb_rate/mH
+
+        !if (hp > pt_nH1_threshold) then
+        !  Lambda_rec = 6.1e-10*kB*temp*temp**(-0.89)
+        !  cooling_rate = Lambda_rec*nHp*nHp*dtnow/rho
+        !end if
 
         ! Debug
       !  if (abs(cooling_rate) > solnVec(EINT_VAR, i, j, k)) then
@@ -297,11 +310,11 @@ end subroutine calc_recomb_emissivity
 ! ionizing photons.
 subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
                                         mcp_fate, dt, dtNew,&
-                                        fleckp, k_ion, dvol,&
+                                        fleckp, k_ion, N_H1, dvol,&
                                         is_empty_cell_event)
   use Simulation_data, only : clight, mH, ev2erg
   use Particles_data, only : pt_is_photoionization, pt_ABS_ID,&
-                             pt_is_corrdl
+                             pt_is_corrdl, pt_is_cont_photo
   use Multispecies_interface, only : Multispecies_getProperty
   use rhd, only : cellAddVar
   implicit none
@@ -314,7 +327,7 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   integer, dimension(MDIM), intent(in) :: cellID
   real, dimension(NPART_PROPS), intent(inout) :: particle
   integer, intent(in) :: mcp_fate
-  real, intent(in) :: dt, dtNew, fleckp, k_ion, dvol
+  real, intent(in) :: dt, dtNew, fleckp, k_ion, N_H1, dvol
   logical, intent(in) :: is_empty_cell_event
 
   ! aux variables
@@ -345,15 +358,25 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   old_hp = solnVec(HP_SPEC, i, j, k)
   old_ele = solnVec(ELE_SPEC, i, j, k)
 
-  nump_new = nump_old*exp(-k_ea_ion*d_trav) 
+  dtau = k_ea_ion*d_trav
+  ! New version
+  if (pt_is_cont_photo) then
+    ! nump_new = nump_old - (number of neutral H destroyed)
+    !          = nump_old - (N_H1_initial - N_H1_final)
+    ! With new scheme, N_H1_final = N_H1_initial / (k_ion*dl + 1)
+    nump_new = nump_old - N_H1*dtau/ (dtau + 1.0)
+   else
+    ! Old version
+    nump_new = nump_old*exp(-dtau) 
+   end if
 
   ! Correction for absorption during the integrated path 
-  dl_corr = 1.0d0
-  dtau = k_ea_ion*d_trav  ! original tau without correction
-  if (pt_is_corrdl .and. (dtau > 2.0)) then
-    dl_corr = (1.0d0 - exp(-dtau)) / dtau
-    nump_new = nump_old*dl_corr
-  end if
+!  dl_corr = 1.0d0
+!  dtau = k_ea_ion*d_trav  ! original tau without correction
+!  if (pt_is_corrdl .and. (dtau > 2.0)) then
+!    dl_corr = (1.0d0 - exp(-dtau)) / dtau
+!    nump_new = nump_old*dl_corr
+!  end if
 
   if ((mcp_fate == pt_ABS_ID) .and. (.not. is_empty_cell_event)) then
     nump_new = 0.0d0
