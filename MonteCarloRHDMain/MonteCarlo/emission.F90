@@ -331,13 +331,10 @@ end subroutine thermal_emission
 subroutine radioactive_emission(blockID, solnVec, dtNew,&
            now_num, now_pos, now_time, &
            now_energy, now_vel, now_weight)
-  use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
-              pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
-              pt_is_veldp, pt_marshak_eos
+  use Particles_data, only : pt_maxnewnum, pt_RadioEmission,&
+                             pt_num_rmcps_tstep, pt_is_veldp
   use Grid_interface, only : Grid_getBlkIndexLimits,&
               Grid_getBlkBoundBox, Grid_getDeltas
-  use Simulation_data, only : R, sigma, a_rad
-  use Eos_data, only : eos_singleSpeciesA
   use opacity, only : calc_abs_opac
   use Driver_interface, only : Driver_abortFlash
   use rhd, only : cellAddVar
@@ -379,7 +376,7 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
   now_energy = 0.0d0
   now_weight = 0.0d0
 
-  if (.not. pt_ThermalEmission) return
+  if (.not. pt_RadioEmission) return
 
   ! Obtain block info
   call Grid_getBlkIndexLimits(blockID, blkLimits, blkLimitsGC)
@@ -400,30 +397,34 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
         gamc = solnVec(GAMC_VAR, i, j, k)
 
         dE = 0.0d0
-        if (pt_is_grey) then
-          call calc_abs_opac(cellID, solnVec, eps_dummy, ka)
-          ! ka here is already in co-moving frame
-          dE = 4.0 * ka * sigma * (temp**4.0) * dV * dtNew
-          kp = ka
-        else
-          call Driver_abortFlash("thermal_emission: non-grey thermal emission&
-                                  not yet implemented.")
-        end if
+
+        ! From here call the radioative_decay() subroutine to compute
+        ! decay rate and radioactive luminosity
+
+!        if (pt_is_grey) then
+!          call calc_abs_opac(cellID, solnVec, eps_dummy, ka)
+!          ! ka here is already in co-moving frame
+!          dE = 4.0 * ka * sigma * (temp**4.0) * dV * dtNew
+!          kp = ka
+!        else
+!          call Driver_abortFlash("thermal_emission: non-grey thermal emission&
+!                                  not yet implemented.")
+!        end if
 
         fn = 1.0d0
-        if ((pt_is_eff_scattering) .and. (dE .ne. 0.0d0)) then
-          c_V = R / ((gamc - 1.0d0)*eos_singleSpeciesA)
-          ! IMC beta
-          beta = (4.0d0 * a_rad * (temp**3)) / (rho * c_V)
-
-          ! Override when Marshak EOS is turned on
-          if (pt_marshak_eos) then
-            c_V = 4.0 * a_rad * (temp**4)  ! Not used
-            beta = 1.0 !0.25
-          end if
-
-          call comp_fleck_factor(kp, beta, dtNew, fn)
-        end if
+!        if ((pt_is_eff_scattering) .and. (dE .ne. 0.0d0)) then
+!          c_V = R / ((gamc - 1.0d0)*eos_singleSpeciesA)
+!          ! IMC beta
+!          beta = (4.0d0 * a_rad * (temp**3)) / (rho * c_V)
+!
+!          ! Override when Marshak EOS is turned on
+!          if (pt_marshak_eos) then
+!            c_V = 4.0 * a_rad * (temp**4)  ! Not used
+!            beta = 1.0 !0.25
+!          end if
+!
+!          call comp_fleck_factor(kp, beta, dtNew, fn)
+!        end if
         solnVec(FLEC_VAR,i,j,k) = fn
 
         dE = fn * dE
@@ -432,12 +433,13 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
 
         ! Actual emission
         if (dE .gt. 0.0d0) then
-          dE_per_mcp = dE / pt_num_tmcps_tstep
+          dE_per_mcp = dE / pt_num_rmcps_tstep
 
-          call cellAddVar(solnVec, cellID, EMIE_VAR, dEMIE)
+          ! This should be stored at LDEC_VAR
+          !call cellAddVar(solnVec, cellID, EMIE_VAR, dEMIE)
 
           ! Loop to create new MCPs
-          do ii = 1, pt_num_tmcps_tstep
+          do ii = 1, pt_num_rmcps_tstep
 
             call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
 
@@ -476,7 +478,7 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
             now_weight(now_num + ii) = newparticle(NUMP_PART_PROP)
           end do
 
-          now_num = now_num + pt_num_tmcps_tstep
+          now_num = now_num + pt_num_rmcps_tstep
           
         end if
 
@@ -597,8 +599,13 @@ subroutine point_emission(blockID, solnVec, dtNew,&
     dE_per_mcp = dE / pt_num_pmcps_tstep
 
     do ii = 1, pt_num_pmcps_tstep
-      ! The full time step
-      dtNow = dtNew 
+      if (pt_PointPulse) then
+        ! The full time step
+        dtNow = dtNew 
+      else
+        ! Continuous point emission
+        call sample_time(dtNew, dtNow)
+      end if 
 
       ! newxyz is just the origin
       newxyz = origin
@@ -755,11 +762,13 @@ subroutine face_emission(blockID, solnVec, dtNew,&
     end if
   end if
 
+
   do ii = LOW, HIGH
     do jj = IAXIS, KAXIS
 
       ! Only select the active face
       if (isEmits(ii, jj)) then
+
         call get_face_area(ii, jj, bndBox, FaceArea)
 
         dE = flux * FaceArea * dtNew
