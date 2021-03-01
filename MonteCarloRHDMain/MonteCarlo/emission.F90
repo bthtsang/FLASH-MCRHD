@@ -785,12 +785,17 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           if (pt_num_fmcps_percell > 0) then
             ! assign face_i and face_j
             ! Assuming NXB = NYB = NZB
-            face_i = int((i - 1) / NXB) + 1
-            face_j = modulo((i - 1), NXB) + 1
+            if (NDIM == 2) then
+              face_i = modulo((i - 1), NXB) + 1
+            else if (NDIM == 3) then
+              ! determine row and column indices
+              face_i = int((i - 1) / NXB) + 1
+              face_j = modulo((i - 1), NXB) + 1
+            end if
 
             if (jj == IAXIS) then
               newxyz(JAXIS) = ycoords(face_i)
-              newxyz(KAXIS) = zcoords(face_j)
+              if (NDIM == 3) newxyz(KAXIS) = zcoords(face_j)
             else if (jj == JAXIS) then
               newxyz(IAXIS) = xcoords(face_i)
               newxyz(KAXIS) = zcoords(face_j)
