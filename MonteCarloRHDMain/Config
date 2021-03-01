@@ -197,6 +197,15 @@ PARAMETER pt_is_photoionization           BOOLEAN FALSE
 D pt_is_es_photoionization     Whether to turn on IMC for photoionization
 PARAMETER pt_is_es_photoionization           BOOLEAN FALSE
 
+D pt_T_n                       Temperature for neutral gas
+PARAMETER pt_T_n               REAL 20.0
+
+D pt_T_i                       Temperature for fully ionized gas
+PARAMETER pt_T_i               REAL 1.0e4
+
+D pt_is_pi_heating             Whether to turn on photoionization heating
+PARAMETER pt_is_pi_heating     BOOLEAN FALSE
+
 D pt_is_apply_recombination     Whether to apply recombination
 PARAMETER pt_is_apply_recombination           BOOLEAN FALSE
 

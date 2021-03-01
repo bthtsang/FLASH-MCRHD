@@ -186,6 +186,9 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_nH1_threshold", pt_nH1_threshold)
   call RuntimeParameters_get ("pt_is_cont_photo", pt_is_cont_photo)
   call RuntimeParameters_get ("pt_pi_avg_cooling", pt_pi_avg_cooling)
+  call RuntimeParameters_get ("pt_is_pi_heating", pt_is_pi_heating)
+  call RuntimeParameters_get ("pt_T_n", pt_T_n)
+  call RuntimeParameters_get ("pt_T_i", pt_T_i)
 
   call RuntimeParameters_get ("pt_temp_floor", pt_temp_floor)
 

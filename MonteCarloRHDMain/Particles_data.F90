@@ -177,6 +177,8 @@ module Particles_data
   real, save    :: pt_nH1_threshold
   real, save    :: pt_pi_avg_cooling
   logical, save :: pt_is_cont_photo
+  logical, save :: pt_is_pi_heating
+  real, save    :: pt_T_n, pt_T_i
 
   real, save    :: pt_temp_floor
 

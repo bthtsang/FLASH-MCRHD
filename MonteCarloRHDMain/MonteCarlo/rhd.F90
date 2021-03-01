@@ -19,15 +19,39 @@ subroutine cellAddVar(dataPtr, ijkindex, var, value)
 
 end subroutine cellAddVar
 
+!!! Subroutine to set gas temperature according to ionization fraction
+subroutine set_temp_with_ion_fraction(now_h1, now_T)
+  use Driver_interface, only : Driver_abortFlash
+  use Grid_data, only : gr_geometry, gr_eosMode
+  use Particles_data, only : pt_T_n, pt_T_i
+  implicit none
+
+  real, intent(in) :: now_h1
+  real, intent(out) :: now_T
+
+  ! Double check you are using dens_temp for EOS
+  ! Turn off this error for spherical due to PPM error
+  if ((gr_geometry /= SPHERICAL) .and. (gr_eosMode /= MODE_DENS_TEMP)) then
+    call Driver_abortFlash("set_temp_with_ion_fraction: wrong EOS mode!")
+  end if
+
+  ! Perform linear interpolation
+  ! Function in Henney et al. 2005
+  now_T = pt_T_i - (pt_T_i - pt_T_n)*now_h1/(2.0 - now_h1)
+
+end subroutine set_temp_with_ion_fraction
+
+
 !!! Subroutine to explicitly apply the radiation source terms
 !!! to the grid variables
 subroutine apply_rad_source_terms(dt)
   use Particles_data, only : pt_is_thermally_coupled,&
                              pt_is_dynamically_coupled,&
                              pt_temp_floor, pt_is_apply_recombination,&
-                             pt_marshak_eos
+                             pt_is_pi_heating, pt_marshak_eos
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getListOfBlocks,&
                              Grid_getBlkPtr, Grid_releaseBlkPtr
+  use Grid_data, only : gr_geometry, gr_eosMode
   use Eos_interface, only : Eos_wrapped
   use Simulation_data, only : a_rad
   use Multispecies_interface, only : Multispecies_getProperty
@@ -51,6 +75,7 @@ subroutine apply_rad_source_terms(dt)
   real :: dvxdt, dvydt, dvzdt
   integer, dimension(2, MDIM) :: EoscellID
   real :: temp, rho, eint, ekin, ener
+  real :: x_n, T_interp
   ! Debug
   real :: oldtemp, oldeint, netheating, oldele
 
@@ -135,7 +160,7 @@ subroutine apply_rad_source_terms(dt)
             EoscellID(:, IAXIS) = i
             EoscellID(:, JAXIS) = j
             EoscellID(:, KAXIS) = k
-            call Eos_wrapped(MODE_DENS_EI, EoscellID, blockID)
+            call Eos_wrapped(gr_eosMode, EoscellID, blockID)
 
             temp = solnVec(TEMP_VAR,i,j,k)
             eint = solnVec(EINT_VAR,i,j,k)
@@ -146,6 +171,10 @@ subroutine apply_rad_source_terms(dt)
               print *, "abse/emie:", solnVec(ABSE_VAR,i,j,k), solnVec(EMIE_VAR,i,j,k)
               print *, "ion state:", solnVec(IONR_VAR,i,j,k), solnVec(RECR_VAR,i,j,k)
               print *, "species:", solnVec(H1_SPEC,i,j,k), solnVec(HP_SPEC,i,j,k), solnVec(ELE_SPEC,i,j,k)
+              print *, "vel", solnVec(VELX_VAR:VELZ_VAR,i,j,k)
+              print *, "dens", solnVec(DENS_VAR,i,j,k)
+
+              call Driver_abortFlash("rhd: overheating in cell, please follow up.")
             end if
             if (oldele > 1.0) then
               print*, "ELEwrong", oldele
@@ -186,12 +215,27 @@ subroutine apply_rad_source_terms(dt)
                                        - ekin_old + ekin_new
           end if
 
+          ! Simple case of not treating photoionization heating
+          ! self-consistently
+          if (.not. pt_is_pi_heating) then
+            x_n = solnVec(H1_SPEC, i, j, k)
+
+            call set_temp_with_ion_fraction(x_n, T_interp)
+            solnVec(TEMP_VAR, i, j, k) = T_interp
+
+            ! Override with the appropriate EINT if in spherical coord.
+            ! The DENS_IE mode then will predict the correct TEMP
+            if (gr_geometry == SPHERICAL) then
+              call Eos_wrapped(MODE_DENS_TEMP, blkLimits, blockID)
+            end if
+          end if
+
         end do
       end do
     end do
 
     ! Update cell temperature after applying the source terms
-    call Eos_wrapped(MODE_DENS_EI, blkLimits, blockID)
+    call Eos_wrapped(gr_eosMode, blkLimits, blockID)
 
     ! Impose temperature floor
     if (pt_temp_floor > 0.0) then
