@@ -217,6 +217,7 @@ subroutine apply_rad_source_terms(dt)
 
           ! Simple case of not treating photoionization heating
           ! self-consistently
+#ifdef FLASH_MCRHD_IONIZATION
           if (.not. pt_is_pi_heating) then
             x_n = solnVec(H1_SPEC, i, j, k)
 
@@ -229,6 +230,7 @@ subroutine apply_rad_source_terms(dt)
               call Eos_wrapped(MODE_DENS_TEMP, blkLimits, blockID)
             end if
           end if
+#endif
 
         end do
       end do
