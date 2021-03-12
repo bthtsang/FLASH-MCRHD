@@ -237,6 +237,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         k_ion = 0.0d0
         fleckp = 1.0d0
+        nH  = 0.0d0
         nH1 = 0.0d0
 #ifdef FLASH_MCRHD_IONIZATION
         fleckp = solnVec(FLEP_VAR, cellID(1), cellID(2), cellID(3))
