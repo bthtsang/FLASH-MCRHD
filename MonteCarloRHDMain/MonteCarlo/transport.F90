@@ -2388,14 +2388,16 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   k_es = (1.0d0 - fleck) * k_a
 
   dl = clight * dt * dshift ! convert dt to comoving frame
+  dtau = k_ea * dl
+
   ! Correction for absorption during the integrated path 
   dl_corr = 1.0d0
   if (pt_is_corrdl .and. (k_ea > 0.0)) then
     dl_corr = (1.0d0 - exp(-dtau)) / dtau
   end if
-  dl = dl * dl_corr
 
-  dtau = k_ea * dl
+  dl = dl * dl_corr
+  dtau = dtau * dl_corr
 
   if (pt_is_deposit_energy) then
     new_weight = old_weight * exp(-dtau)
