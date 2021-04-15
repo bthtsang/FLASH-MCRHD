@@ -642,7 +642,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_FacePlanckTemp, pt_constFaceFlux,&
                              pt_is_radial_face_vel, pt_is_iso_face_vel,&
                              pt_is_therm_face_vel, pt_smlpush,&
-                             pt_num_fmcps_percell
+                             pt_num_fmcps_percell, pt_percell_reg_dt
   use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
                              Grid_getBlkBC, Grid_getBlkPhysicalSize
   use Grid_data, only: gr_geometry
@@ -695,6 +695,9 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   integer, parameter :: zcoordsize = NZB
   real, dimension(zcoordsize) :: zcoords
   integer :: face_i, face_j
+  integer :: n_emitting_cell
+  real :: reg_dt, dt_frac, face_area_cell
+  real :: dE_offset
 
   ! Initialization
   now_num = 0
@@ -752,14 +755,20 @@ subroutine face_emission(blockID, solnVec, dtNew,&
     end if
 
     ! Set the number of new MCPs according to NDIM
+    n_emitting_cell = 1
     num_face_mcps = pt_num_fmcps_percell  ! set to percell
     if (NDIM > 1) then                    ! then multiply by number of cells
       num_face_mcps = num_face_mcps * NXB
+      n_emitting_cell = n_emitting_cell * NXB
 
       if (NDIM == 3) then
         num_face_mcps = num_face_mcps * NYB
+        n_emitting_cell = n_emitting_cell * NYB
       end if
     end if
+
+    ! store constant time step size
+    reg_dt = 1.0 / real(pt_num_fmcps_percell)
   end if
 
 
@@ -785,6 +794,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           if (pt_num_fmcps_percell > 0) then
             ! assign face_i and face_j
             ! Assuming NXB = NYB = NZB
+            face_i = 1
+            face_j = 1
             if (NDIM == 2) then
               face_i = modulo((i - 1), NXB) + 1
             else if (NDIM == 3) then
@@ -792,6 +803,19 @@ subroutine face_emission(blockID, solnVec, dtNew,&
               face_i = int((i - 1) / NXB) + 1
               face_j = modulo((i - 1), NXB) + 1
             end if
+            call get_cell_face_area(jj, bndBox, deltaCell, &
+                                    face_i, face_j, face_area_cell)
+            ! Correctly offset the area for spherical cells
+            dE_offset = flux * face_area_cell *dtNew
+            dE_per_mcp = dE_offset / pt_num_fmcps_percell 
+
+            ! Regularize time step size for percell emission
+            if (pt_percell_reg_dt) then
+              dt_frac = reg_dt*((i - 1)/n_emitting_cell + 1)
+              dtNow = dt_frac*dtNew
+            end if
+
+            
 
             if (jj == IAXIS) then
               newxyz(JAXIS) = ycoords(face_i)
@@ -942,6 +966,69 @@ subroutine get_face_area(dir, axis, bndBox, FaceArea)
 
 end subroutine get_face_area
 
+
+subroutine get_cell_face_area(axis, bndBox, deltas, jj, kk, CellFaceArea)
+  use Driver_interface, only : Driver_abortFlash
+  use Grid_data, only: gr_geometry
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  integer, intent(in) :: axis 
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
+  real, dimension(MDIM), intent(in) :: deltas
+  integer, intent(in) :: jj, kk
+  real, intent(out)   :: CellFaceArea
+
+  ! aux variables
+  integer :: i
+  real :: r_in, theta_in, theta_out, phi_in, phi_out
+  real, dimension(MDIM) :: cellSize
+
+  ! Initialization
+  CellFaceArea = 1.0d0
+  if (gr_geometry == CARTESIAN) then
+    cellSize = deltas
+
+    if (NDIM .eq. 2) then
+      cellSize(KAXIS) = 1.0 ! set blockSize(KAXIS) to one for 2D
+      do i = IAXIS, JAXIS
+        if (i .NE. axis) CellFaceArea = CellFaceArea * cellSize(i)
+      end do
+    end if
+
+    if (NDIM .eq. 3) then
+      do i = IAXIS, KAXIS
+        if (i .NE. axis) CellFaceArea = CellFaceArea * cellSize(i)
+      end do
+    end if
+
+  else if (gr_geometry == SPHERICAL) then
+    r_in = bndBox(LOW, IAXIS)
+
+    theta_in  = bndBox(LOW, JAXIS) + (jj - 1)*deltas(JAXIS)
+    theta_out = theta_in + deltas(JAXIS)
+
+    phi_in  = bndBox(LOW, KAXIS) + (kk - 1)*deltas(KAXIS)
+    phi_out = phi_in + deltas(KAXIS)
+
+    if (NDIM == 3) then
+      CellFaceArea = CellFaceArea * r_in*r_in&
+                          * (phi_out - phi_in)&
+                          * (cos(theta_in) - cos(theta_out))
+    else if (NDIM == 2) then
+      CellFaceArea = 2.0 * PI * r_in*r_in&
+                          * (cos(theta_in) - cos(theta_out))
+    else
+      call Driver_abortFlash("face_emission: not yet implemented&
+                              for 1D/2D simulations.")
+    end if
+  else
+    call Driver_abortFlash("get_cell_face_area: unknown geometry requested.")
+  end if
+
+end subroutine get_cell_face_area
 
 subroutine comp_fleck_factor(kp, beta, dt, fn)
   use Particles_data, only : pt_es_alpha
