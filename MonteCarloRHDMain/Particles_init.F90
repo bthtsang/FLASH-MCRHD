@@ -151,6 +151,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_radial_face_vel", pt_is_radial_face_vel)
   call RuntimeParameters_get ("pt_num_fmcps_tstep", pt_num_fmcps_tstep)
   call RuntimeParameters_get ("pt_num_fmcps_percell", pt_num_fmcps_percell)
+  call RuntimeParameters_get ("pt_percell_reg_dt", pt_percell_reg_dt)
 
   ! Point Emission
   call RuntimeParameters_get ("pt_PointEmission", pt_PointEmission)

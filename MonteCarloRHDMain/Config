@@ -126,6 +126,9 @@ PARAMETER pt_num_fmcps_tstep     INTEGER 10
 D pt_num_fmcps_percell    Number of face MCP per cell at cell centers
 PARAMETER pt_num_fmcps_percell     INTEGER 0
 
+D pt_percell_reg_dt       Whether to sample time steps with regular intervals
+PARAMETER pt_percell_reg_dt        BOOLEAN FALSE
+
 D pt_PointEmission        Whether or not to emit radiation from a point
 PARAMETER pt_PointEmission        BOOLEAN FALSE
 

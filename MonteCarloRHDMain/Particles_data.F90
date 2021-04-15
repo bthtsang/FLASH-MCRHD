@@ -140,6 +140,7 @@ module Particles_data
   logical, save :: pt_is_radial_face_vel
   integer, save :: pt_num_fmcps_tstep
   integer, save :: pt_num_fmcps_percell 
+  logical, save :: pt_percell_reg_dt
 
   logical, save :: pt_PointEmission, pt_PointPulse
   real, save    :: pt_PointPulseErad
