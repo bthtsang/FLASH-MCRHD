@@ -221,6 +221,9 @@ PARAMETER pt_is_caseB           BOOLEAN TRUE
 D pt_is_rm_mcps_caseB          Whether to remove MCPs upon case B es
 PARAMETER pt_is_rm_mcps_caseB   BOOLEAN FALSE
 
+D pt_num_r1mcps_tstep      Number of recombination MCP per block per timestep
+PARAMETER pt_num_r1mcps_tstep     INTEGER 10
+
 D pt_nH1_threshold             Whether to turn on collisional photoionization
 PARAMETER pt_nH1_threshold           REAL  1.0e-10
 

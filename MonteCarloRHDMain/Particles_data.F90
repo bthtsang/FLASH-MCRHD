@@ -175,6 +175,7 @@ module Particles_data
                    pt_is_apply_recombination,&
                    pt_is_coll_ionization, pt_is_caseB,&
                    pt_is_rm_mcps_caseB
+  integer, save :: pt_num_r1mcps_tstep
   real, save    :: pt_nH1_threshold
   real, save    :: pt_pi_avg_cooling
   logical, save :: pt_is_cont_photo
