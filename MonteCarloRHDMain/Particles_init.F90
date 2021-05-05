@@ -168,6 +168,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_is_deposit_energy", pt_is_deposit_energy)
   call RuntimeParameters_get ("pt_is_deposit_urad", pt_is_deposit_urad)
   call RuntimeParameters_get ("pt_is_deposit_momentum", pt_is_deposit_momentum)
+  call RuntimeParameters_get ("pt_is_deposit_ion_momentum", pt_is_deposit_ion_momentum)
 
   call RuntimeParameters_get ("pt_is_thermally_coupled", pt_is_thermally_coupled)
   call RuntimeParameters_get ("pt_is_dynamically_coupled", pt_is_dynamically_coupled)

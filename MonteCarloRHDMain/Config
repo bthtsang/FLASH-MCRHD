@@ -165,6 +165,9 @@ PARAMETER pt_is_deposit_energy         BOOLEAN TRUE
 D pt_is_deposit_momentum  Whether to deposit radiation momentum on the grid
 PARAMETER pt_is_deposit_momentum         BOOLEAN TRUE
 
+D pt_is_deposit_ion_momentum  Whether to deposit radiation momentum from ionizing radiation
+PARAMETER pt_is_deposit_ion_momentum         BOOLEAN FALSE
+
 D pt_is_thermally_coupled  Whether to apply radiation energy source term
 PARAMETER pt_is_thermally_coupled         BOOLEAN FALSE
 

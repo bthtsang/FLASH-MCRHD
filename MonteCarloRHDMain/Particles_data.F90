@@ -166,7 +166,7 @@ module Particles_data
 
   logical, save :: pt_is_corrdl
   logical, save :: pt_is_deposit_urad, pt_is_deposit_energy,&
-                   pt_is_deposit_momentum
+                   pt_is_deposit_momentum, pt_is_deposit_ion_momentum
   logical, save :: pt_is_thermally_coupled, pt_is_dynamically_coupled
   logical, save :: pt_is_scat_elastic, pt_is_escat_elastic
   logical, save :: pt_is_scat_iso, pt_is_escat_iso
