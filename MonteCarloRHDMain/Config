@@ -218,6 +218,9 @@ PARAMETER pt_is_coll_ionization           BOOLEAN FALSE
 D pt_is_caseB                  Whether to use case B approx.
 PARAMETER pt_is_caseB           BOOLEAN TRUE
 
+D pt_is_caseA_radeqm           Whether to adopt radiative eqm. for case A photoionization
+PARAMETER pt_is_caseA_radeqm    BOOLEAN TRUE
+
 D pt_is_rm_mcps_caseB          Whether to remove MCPs upon case B es
 PARAMETER pt_is_rm_mcps_caseB   BOOLEAN FALSE
 
