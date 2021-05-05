@@ -31,7 +31,8 @@ subroutine set_temp_with_ion_fraction(now_h1, now_T)
 
   ! Double check you are using dens_temp for EOS
   ! Turn off this error for spherical due to PPM error
-  if ((gr_geometry /= SPHERICAL) .and. (gr_eosMode /= MODE_DENS_TEMP)) then
+  !if ((gr_geometry /= SPHERICAL) .and. (gr_eosMode /= MODE_DENS_TEMP)) then
+  if ((gr_eosMode /= MODE_DENS_TEMP)) then
     call Driver_abortFlash("set_temp_with_ion_fraction: wrong EOS mode!")
   end if
 

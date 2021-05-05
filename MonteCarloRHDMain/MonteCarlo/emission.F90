@@ -34,6 +34,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   integer :: b
   logical :: success 
   integer :: num_thermal, num_point, num_face, old_pt_numLocal
+  integer :: num_recomb1
 
   real, dimension(MDIM,pt_maxnewnum) :: now_pos, now_vel
   real, dimension(pt_maxnewnum) :: now_time, now_energy, now_weight
@@ -107,8 +108,21 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
     end if
 
     ! Recombination emission
-    call calc_recomb_emissivity(blkList(b), solnVec, dtNew)
+    call calc_recomb_emissivity(blkList(b), solnVec, dtNew,&
+                                num_recomb1, now_pos, now_time, &
+                                now_energy, now_vel, now_weight)
+    if (num_recomb1 .GT. 0) then
+      new_pos(1:MDIM,new_num+1:new_num+num_recomb1) = now_pos(1:MDIM,1:num_recomb1)
+      new_vel(1:MDIM,new_num+1:new_num+num_recomb1) = now_vel(1:MDIM,1:num_recomb1)
+      new_time(new_num+1:new_num+num_recomb1) = now_time(1:num_recomb1)
+      new_energy(new_num+1:new_num+num_recomb1) = now_energy(1:num_recomb1)
+      new_weight(new_num+1:new_num+num_recomb1) = now_weight(1:num_recomb1)
+
+      new_num = new_num + num_recomb1
+    end if
+
     ! Case B approximation, no MCP generation required
+    ! Apr 15 2021, generalizing to non-case B
 
     call Grid_releaseBlkPtr(blkList(b), solnVec)
   end do

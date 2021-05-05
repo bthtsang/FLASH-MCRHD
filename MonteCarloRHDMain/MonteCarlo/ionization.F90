@@ -92,7 +92,7 @@ end subroutine calc_k_coll
 ! subroutine to compute recombination coefficient alpha_B
 ! for now, constant at 2.59d-13
 ! Collisional ionization coefficient
-subroutine calc_recomb_coeff(cellID, solnVec, alpha_B)
+subroutine calc_recomb_coeff(cellID, solnVec, is_caseB, alpha_X)
   use Particles_data, only : pt_is_photoionization, pt_dens_threshold
   implicit none
 
@@ -102,19 +102,24 @@ subroutine calc_recomb_coeff(cellID, solnVec, alpha_B)
   ! Input/Output
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
-  real, intent(out) :: alpha_B
+  logical, intent(in) :: is_caseB
+  real, intent(out) :: alpha_X
 
   ! aux variables
   real :: rho, temp
 
-  alpha_B = 0.0d0
+  alpha_X = 0.0d0
   if (.not. pt_is_photoionization) return
 
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
   temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   ! adopt a constant value for now
-  alpha_B = 2.59d-13!*(temp/1.0d4)**(-0.7)
+  if (is_caseB) then
+    alpha_X = 2.59d-13!*(temp/1.0d4)**(-0.7)
+  else
+    alpha_X = 4.18d-13
+  end if
 
 end subroutine calc_recomb_coeff
 
@@ -156,14 +161,24 @@ end subroutine calc_ionization_fleck
 
 ! Subroutine to populate recombination and the associated
 ! cooling rate. 
-subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
+subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
+                                  now_num, now_pos, now_time, &
+                                  now_energy, now_vel, now_weight)
   use Particles_data, only : pt_is_photoionization, pt_is_coll_ionization,&
-                             pt_is_es_photoionization,&
+                             pt_is_es_photoionization, pt_maxnewnum,&
                              pt_is_apply_recombination,&
-                             pt_nH1_threshold
-  use Grid_interface, only : Grid_getBlkIndexLimits 
+                             pt_nH1_threshold, pt_is_caseB, pt_is_caseA_radeqm,&
+                             pt_num_r1mcps_tstep, pt_is_veldp
+  use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
+                             Grid_getDeltas, Grid_getSingleCellVol
+  use new_mcp, only : sample_blk_position, sample_iso_velocity,&
+                      sample_cell_position,&
+                      sample_therm_face_velocity,&
+                      sample_cart_therm_face_velocity,&
+                      sample_time, sample_energy
   use Multispecies_interface, only : Multispecies_getProperty
   use Simulation_data, only : mH, ev2erg, kB
+  use relativity, only : transform_comoving_to_lab
   implicit none
 
 #include "constants.h"
@@ -172,20 +187,40 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
   ! Input/Output
   integer, intent(in) :: blkID
   real, pointer :: solnVec(:,:,:,:)
-  real, intent(in) :: dtnow
+  real, intent(in) :: dtNew
+  integer, intent(out) :: now_num
+  real, dimension(MDIM,pt_maxnewnum), intent(out) :: now_pos, now_vel
+  real, dimension(pt_maxnewnum), intent(out) :: now_time, now_energy, now_weight
 
   ! aux variables
   integer, dimension(2, MDIM) :: blkLimits, blkLimitsGC
+  real, dimension(LOW:HIGH, MDIM) :: bndBox
+  real, dimension(MDIM) :: deltaCell
   integer, dimension(MDIM) :: cellID
   integer :: i, j, k
   real :: rho, temp
   real :: h1, hp, ele, Ah1, Ae
   real :: nH, nH1, nHp, ne
-  real :: k_coll, alpha_B, gamma_n, fleck_n
+  real :: k_coll, alpha_X, gamma_n, fleck_n
+  real :: alpha_A, alpha_B
   real :: recomb_rate, cooling_rate
+  integer :: ii
+  real, dimension(NPART_PROPS) :: newparticle
+  real :: dV, dE, dE_per_mcp, dtNow
+  real :: weight_per_mcp, dshift
+  real, dimension(MDIM) :: newxyz, newvel
+  real :: newenergy
 
   real :: Lambda_rec
   real :: avg_recomb_energy
+
+  ! Initialization
+  now_num = 0
+  now_pos = 0.0d0
+  now_vel = 0.0d0
+  now_time = 0.0d0
+  now_energy = 0.0d0
+  now_weight = 0.0d0
 
   ! exit if photoionization is off
   if (.not. pt_is_photoionization) return
@@ -195,10 +230,13 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
 #ifdef FLASH_MCRHD_IONIZATION
 #ifdef H1_SPEC
   call Grid_getBlkIndexLimits(blkID, blkLimits, blkLimitsGC)
+  call Grid_getBlkBoundBox(blkID, bndBox)
+  call Grid_getDeltas(blkID, deltaCell)
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
         cellID = (/ i, j, k /)
+        call Grid_getSingleCellVol(blkID, EXTERIOR, cellID, dV)
 
         ! Thermodynamical quantities
         rho  = solnVec(DENS_VAR, i, j, k)
@@ -223,11 +261,18 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
           print *, "Failedns", h1, hp, ele
         end if
 
-        call calc_recomb_coeff(cellID, solnVec, alpha_B)        
+        call calc_recomb_coeff(cellID, solnVec, pt_is_caseB, alpha_X)        
         call calc_k_coll(cellID, solnVec, k_coll)
 
-        call calc_ionization_fleck(nH, nH1, k_coll, alpha_B, dtnow,&
+        call calc_ionization_fleck(nH, nH1, k_coll, alpha_X, dtNew,&
                                      gamma_n, fleck_n)
+        if (pt_is_caseA_radeqm) then
+          call calc_recomb_coeff(cellID, solnVec, .false., alpha_A)
+          call calc_recomb_coeff(cellID, solnVec, .true.,  alpha_B)
+          gamma_n = alpha_B / alpha_A
+          fleck_n = alpha_B / alpha_A
+        end if
+
         if (fleck_n < 1.0d-26) then
           print *, "tinyfleckp", nH, nH1, fleck_n
           print *, "cellID", i, j, k
@@ -246,15 +291,15 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
         if (hp > pt_nH1_threshold) then
           if (pt_is_es_photoionization) then
             !recomb_rate = (gamma_n - 1.0)*nH1& 
-            !            + gamma_n*(nH*nH - nH1*nH1)*alpha_B*dtnow&
-            !            - gamma_n*nH1*nH1*k_coll*dtnow
-            recomb_rate = gamma_n*(nH - nH1)**2*alpha_B*dtnow
+            !            + gamma_n*(nH*nH - nH1*nH1)*alpha_X*dtNew&
+            !            - gamma_n*nH1*nH1*k_coll*dtNew
+            recomb_rate = gamma_n*(nH - nH1)**2*alpha_X*dtNew
           else ! non implicit approach
-            recomb_rate = alpha_B*nHp*nHp ! number/cm^3/s
+            recomb_rate = alpha_X*nHp*nHp ! number/cm^3/s
             !recomb_rate = (nH*nH - nH1*nH1)*alpha_B&
             !            - nH1*nH1*k_coll
             ! Convert to change in mass fraction (dimensionless)
-            recomb_rate = recomb_rate*dtnow ! number/cm^3
+            recomb_rate = recomb_rate*dtNew ! number/cm^3
           end if
           recomb_rate = recomb_rate/nH ! dimensionless
         end if
@@ -265,6 +310,61 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtnow)
 
         ! Setting the associated recombination cooling rate
         cooling_rate = avg_recomb_energy*recomb_rate/mH
+
+        ! Sample recombination radiation field if not in case B approx.
+        ! and if the cell has non-zero recombination rate
+        ! Additionally, requires rad eqm for case A to be OFF.
+        if ((.not. pt_is_caseB) .and. (recomb_rate > 0.0) .and.&
+            (.not. pt_is_caseA_radeqm)) then
+          dE = cooling_rate * rho * dV
+          ! Separate out the ionizing fraction of the recombination
+          dE = dE * (alpha_A - alpha_B) / alpha_A
+
+          dE_per_mcp = dE / pt_num_r1mcps_tstep
+
+          ! Loop to create new MCPs
+          do ii = 1, pt_num_r1mcps_tstep
+
+            call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
+
+            call sample_time(dtNew, dtNow)
+
+            call sample_iso_velocity(newvel)
+
+            call sample_energy(solnVec, cellID, newenergy)
+            weight_per_mcp = dE_per_mcp / newenergy
+
+            ! Initialization
+            newparticle = 0.0
+            ! Put attributes into a new particle array for
+            ! easier Lorentz transformation
+            newparticle(POSX_PART_PROP:POSZ_PART_PROP) = newxyz
+            newparticle(VELX_PART_PROP:VELZ_PART_PROP) = newvel
+            newparticle(ENER_PART_PROP) = newenergy
+            newparticle(TREM_PART_PROP) = dtNow
+            newparticle(NUMP_PART_PROP) = weight_per_mcp
+
+            ! Convert to lab frame if velocity dependent is on
+            if (pt_is_veldp) then
+              ! call some conversion function to convert
+              call transform_comoving_to_lab(cellID, solnVec,&
+                            newparticle, dshift)
+            end if
+
+
+            ! Record the MCP attributes
+            now_time(now_num + ii)   = newparticle(TREM_PART_PROP)
+            now_pos(:, now_num + ii) = newparticle(POSX_PART_PROP:&
+                                                   POSZ_PART_PROP)
+            now_energy(now_num + ii) = newparticle(ENER_PART_PROP)
+            now_vel(:, now_num + ii) = newparticle(VELX_PART_PROP:&
+                                                   VELZ_PART_PROP)
+            now_weight(now_num + ii) = newparticle(NUMP_PART_PROP)
+          end do
+
+          now_num = now_num + pt_num_r1mcps_tstep
+
+        end if
 
         !if (hp > pt_nH1_threshold) then
         !  Lambda_rec = 6.1e-10*kB*temp*temp**(-0.89)
@@ -484,8 +584,9 @@ subroutine eff_scatter_ionizing_mcp(solnVec, cellID, particle, is_caseB)
   if (is_caseB) then
     mcp_eps_as = 10.0*ev2erg  ! reprocessed to non-ionizing
   else
-    call Driver_abortFlash("eff_scatter_ionizing_mcp: non case-B &
-                            approx. not implemented yet.")
+    !call Driver_abortFlash("eff_scatter_ionizing_mcp: non case-B &
+    !                        approx. not implemented yet.")
+    mcp_eps_as = mcp_eps_bs  ! case A: stay ionizing
   end if
 
   ! Conserve photon number if photon energy shifted
