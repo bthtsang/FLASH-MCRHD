@@ -129,7 +129,9 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
   ! Appending new MCPs to particles array, pt_numLocal updated
   old_pt_numLocal = pt_numLocal
-  print *, "Rank", pt_meshMe, "receives", new_num, "new MCPs."
+  if (new_num > 0) then
+    print *, "Rank", pt_meshMe, "receives", new_num, "new MCPs."
+  end if
 
   call Particles_addNew(new_num, new_pos(:,1:new_num), success)
 
