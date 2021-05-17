@@ -215,6 +215,9 @@ PARAMETER pt_is_pi_heating     BOOLEAN FALSE
 D pt_is_apply_recombination     Whether to apply recombination
 PARAMETER pt_is_apply_recombination           BOOLEAN FALSE
 
+D pt_is_realistic_recomb        Whether to use temp-dependent recomb coeff. and cooling
+PARAMETER pt_is_realistic_recomb           BOOLEAN FALSE
+
 D pt_is_coll_ionization        Whether to turn on collisional photoionization
 PARAMETER pt_is_coll_ionization           BOOLEAN FALSE
 

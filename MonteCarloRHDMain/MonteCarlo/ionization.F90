@@ -93,7 +93,8 @@ end subroutine calc_k_coll
 ! for now, constant at 2.59d-13
 ! Collisional ionization coefficient
 subroutine calc_recomb_coeff(cellID, solnVec, is_caseB, alpha_X)
-  use Particles_data, only : pt_is_photoionization, pt_dens_threshold
+  use Particles_data, only : pt_is_photoionization, pt_dens_threshold,&
+                             pt_is_realistic_recomb
   implicit none
 
 #include "constants.h"
@@ -117,11 +118,99 @@ subroutine calc_recomb_coeff(cellID, solnVec, is_caseB, alpha_X)
   ! adopt a constant value for now
   if (is_caseB) then
     alpha_X = 2.59d-13!*(temp/1.0d4)**(-0.7)
+    if (pt_is_realistic_recomb) alpha_X = alpha_X*(temp/1.0e4)**(-0.7)
   else
     alpha_X = 4.18d-13
   end if
 
 end subroutine calc_recomb_coeff
+
+
+! subroutine to compute recombination cooling rate
+subroutine calc_rec_cooling_rate(cellID, solnVec, Lambda_rec)
+  use Simulation_data, only : kB
+  use Particles_data, only : pt_is_photoionization
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  integer, dimension(MDIM), intent(in) :: cellID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(out) :: Lambda_rec
+
+  ! aux variables
+  real :: temp
+
+  Lambda_rec = 0.0
+  if (.not. pt_is_photoionization) return
+
+  temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  if (temp <= 100.0) return
+
+  ! Following Krumholz 2007
+  Lambda_rec = 6.1e-10*kB*temp*(temp)**(-0.89)
+
+end subroutine calc_rec_cooling_rate
+
+
+! subroutine to compute free-free cooling rate
+subroutine calc_KI_cooling_rate(cellID, solnVec, Lambda_KI)
+  use Simulation_data, only : kB
+  use Particles_data, only : pt_is_photoionization
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  integer, dimension(MDIM), intent(in) :: cellID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(out) :: Lambda_KI
+
+  ! aux variables
+  real :: Gamma_heat, temp
+
+  Lambda_KI = 0.0
+  if (.not. pt_is_photoionization) return
+
+  temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  Gamma_heat = 2.0e-26
+  
+  ! Following Micic et al. (2013) corrected version
+  Lambda_KI = 1.0e7*exp(-1.184e5/(temp + 1.0e3)) +\
+              1.4e-2*sqrt(temp)*exp(-92.0/temp)
+  Lambda_KI = Gamma_heat*Lambda_KI
+
+end subroutine calc_KI_cooling_rate
+
+
+! subroutine to compute free-free cooling rate
+subroutine calc_ff_cooling_rate(cellID, solnVec, Lambda_ff)
+  use Simulation_data, only : kB
+  use Particles_data, only : pt_is_photoionization
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  integer, dimension(MDIM), intent(in) :: cellID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(out) :: Lambda_ff
+
+  ! aux variables
+  real :: temp, Gaunt
+
+  Gaunt = 1.3
+  Lambda_ff = 0.0
+  if (.not. pt_is_photoionization) return
+
+  temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  if (temp <= 1e3) return  ! cooling not dominate in neutral region
+
+  ! Following Osterbrock (1999) book, gaunt factor chosen at 1.3.
+  Lambda_ff = 1.42e-27*sqrt(temp)*Gaunt
+
+end subroutine calc_ff_cooling_rate
 
 
 ! subroutine to compute the phototionization fleck factor
@@ -166,7 +255,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
                                   now_energy, now_vel, now_weight)
   use Particles_data, only : pt_is_photoionization, pt_is_coll_ionization,&
                              pt_is_es_photoionization, pt_maxnewnum,&
-                             pt_is_apply_recombination,&
+                             pt_is_apply_recombination, pt_is_realistic_recomb,&
                              pt_nH1_threshold, pt_is_caseB, pt_is_caseA_radeqm,&
                              pt_num_r1mcps_tstep, pt_is_veldp
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
@@ -211,7 +300,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
   real, dimension(MDIM) :: newxyz, newvel
   real :: newenergy
 
-  real :: Lambda_rec
+  real :: Lambda_rec, Lambda_ff
   real :: avg_recomb_energy
 
   ! Initialization
@@ -266,7 +355,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
 
         call calc_ionization_fleck(nH, nH1, k_coll, alpha_X, dtNew,&
                                      gamma_n, fleck_n)
-        if (pt_is_caseA_radeqm) then
+        if ((.not. pt_is_caseB) .and. (pt_is_caseA_radeqm)) then
           call calc_recomb_coeff(cellID, solnVec, .false., alpha_A)
           call calc_recomb_coeff(cellID, solnVec, .true.,  alpha_B)
           gamma_n = alpha_B / alpha_A
@@ -301,6 +390,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
             ! Convert to change in mass fraction (dimensionless)
             recomb_rate = recomb_rate*dtNew ! number/cm^3
           end if
+          !if (pt_is_caseA_radeqm) recomb_rate = fleck_n*recomb_rate
           recomb_rate = recomb_rate/nH ! dimensionless
         end if
 
@@ -309,6 +399,11 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
         end if
 
         ! Setting the associated recombination cooling rate
+        if (pt_is_realistic_recomb) then
+          call calc_rec_cooling_rate(cellID, solnVec, Lambda_rec)
+          call calc_ff_cooling_rate(cellID, solnVec, Lambda_ff)
+          avg_recomb_energy = (Lambda_rec + Lambda_ff) / alpha_X
+        end if
         cooling_rate = avg_recomb_energy*recomb_rate/mH
 
         ! Sample recombination radiation field if not in case B approx.
@@ -412,9 +507,11 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
                                         mcp_fate, dt, dtNew,&
                                         fleckp, k_ion, N_H1, dvol,&
                                         is_empty_cell_event)
+  use Grid_data, only : gr_geometry
   use Simulation_data, only : clight, mH, ev2erg
   use Particles_data, only : pt_is_photoionization, pt_ABS_ID,&
-                             pt_is_corrdl, pt_is_cont_photo
+                             pt_is_corrdl, pt_is_cont_photo,&
+                             pt_is_deposit_ion_momentum
   use Multispecies_interface, only : Multispecies_getProperty
   use rhd, only : cellAddVar
   implicit none
@@ -435,8 +532,12 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   real :: rho, Ae, Ah1, nH1
   real :: k_ea_ion, nump_init, nump_old, nump_new
   real :: energy, d_trav, old_h1, old_hp, old_ele
-  real :: delta_n_ion, delta_e_ion
+  real :: delta_n_ion, delta_e_ion, delta_e_full
   real :: dtau, dl_corr
+  real, dimension(MDIM) :: mcp_vel, n_hat, mcp_pos
+  real, dimension(MDIM) :: x_hat, y_hat, z_hat
+  real :: radflux_a, aa_x, aa_y, aa_z
+  real :: theta, phi
 
   if (.not. pt_is_photoionization) return
 
@@ -486,6 +587,7 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   delta_n_ion = -(nump_old - nump_new) / dvol
   delta_n_ion = delta_n_ion*mH/rho
   delta_e_ion = (energy - 13.6*ev2erg)*(nump_old - nump_new) / (rho*dvol)
+  delta_e_full = energy*(nump_old - nump_new) / (rho*dvol)
 
   !if (abs(delta_n_ion) .gt. old_h1) then
   if (.not. is_empty_cell_event) then
@@ -496,6 +598,7 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   else
     delta_n_ion = -old_h1 ! remove all H1 in cell
     delta_e_ion = abs(delta_n_ion)*(energy-13.6*ev2erg) / mH ! rho*dV canceled
+    delta_e_full = abs(delta_n_ion)*energy / mH ! rho*dV canceled
     nump_new = nump_old - abs(delta_n_ion)*dvol*rho/mH
 
     ! Impose the fully ionized case
@@ -533,6 +636,51 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
   ! Accumulate heating/ionization terms
   call cellAddVar(solnVec, cellID, IONR_VAR, delta_n_ion)
   call cellAddVar(solnVec, cellID, HEAT_VAR, delta_e_ion)
+
+  ! Accumulate ionizing radiation pressure if needed
+  if (pt_is_deposit_ion_momentum) then
+    mcp_vel = particle(VELX_PART_PROP:VELZ_PART_PROP)
+    n_hat = mcp_vel / clight
+    mcp_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
+
+    if (gr_geometry == CARTESIAN) then
+      x_hat = (/ 1.0d0, 0.0d0, 0.0d0 /)
+      y_hat = (/ 0.0d0, 1.0d0, 0.0d0 /)
+      z_hat = (/ 0.0d0, 0.0d0, 1.0d0 /)
+    else if (gr_geometry == SPHERICAL) then
+      theta = mcp_pos(JAXIS)
+      phi   = mcp_pos(KAXIS)
+
+      x_hat = (/ sin(theta)*cos(phi),&
+                 sin(theta)*sin(phi),&
+                 cos(theta) /)
+      y_hat = (/ cos(theta)*cos(phi),&
+                 cos(theta)*sin(phi),&
+                -sin(theta) /)
+      z_hat = (/-sin(phi),&
+                 cos(phi),&
+                 0.0d0 /)
+    end if
+
+    ! compute radiative momentum pre-factors
+    ! here delta_e_full is in unit erg/g already
+    ! _full for all energy, not just excess of ionization
+    radflux_a = delta_e_full / (dtNew * clight)
+
+    aa_x = radflux_a * dot_product(n_hat, x_hat)
+    call cellAddVar(solnVec, cellID, ABMX_VAR, aa_x)
+
+    if (NDIM >= 2) then
+      aa_y = radflux_a * dot_product(n_hat, y_hat)
+      call cellAddVar(solnVec, cellID, ABMY_VAR, aa_y)
+
+      if (NDIM == 3) then
+        aa_z = radflux_a * dot_product(n_hat, z_hat)
+        call cellAddVar(solnVec, cellID, ABMZ_VAR, aa_z)
+      end if
+    end if
+
+  end if
 
   ! Update particle's weight info
   particle(NUMP_PART_PROP) = nump_new
