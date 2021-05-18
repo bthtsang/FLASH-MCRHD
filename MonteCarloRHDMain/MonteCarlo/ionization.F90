@@ -6,9 +6,9 @@ module ionization
 ! Photoionization absorption coefficient
 subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH, nH1)
   use Particles_data, only : pt_is_photoionization, pt_dens_threshold,&
-                             pt_nH1_threshold
+                             pt_nH1_threshold, ev2erg
   use Driver_interface, only : Driver_abortFlash
-  use Simulation_data, only : mH, ev2erg, sigma_pi
+  use Simulation_data, only : mH, sigma_pi
   use Multispecies_interface, only : Multispecies_getProperty
   implicit none
 
@@ -61,8 +61,9 @@ end subroutine calc_pi_opac
 
 ! Collisional ionization coefficient
 subroutine calc_k_coll(cellID, solnVec, k_coll)
-  use Particles_data, only : pt_is_coll_ionization, pt_dens_threshold
-  use Simulation_data, only : kB, ev2erg
+  use Particles_data, only : pt_is_coll_ionization, pt_dens_threshold,&
+                             ev2erg
+  use Simulation_data, only : kB
   implicit none
 
 #include "constants.h"
@@ -253,7 +254,7 @@ end subroutine calc_ionization_fleck
 subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
                                   now_num, now_pos, now_time, &
                                   now_energy, now_vel, now_weight)
-  use Particles_data, only : pt_is_photoionization, pt_is_coll_ionization,&
+  use Particles_data, only : ev2erg, pt_is_photoionization, pt_is_coll_ionization,&
                              pt_is_es_photoionization, pt_maxnewnum,&
                              pt_is_apply_recombination, pt_is_realistic_recomb,&
                              pt_nH1_threshold, pt_is_caseB, pt_is_caseA_radeqm,&
@@ -266,7 +267,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
                       sample_cart_therm_face_velocity,&
                       sample_time, sample_energy
   use Multispecies_interface, only : Multispecies_getProperty
-  use Simulation_data, only : mH, ev2erg, kB
+  use Simulation_data, only : mH, kB
   use relativity, only : transform_comoving_to_lab
   implicit none
 
@@ -508,8 +509,8 @@ subroutine deposit_ionizing_radiation(solnVec, cellID, particle,&
                                         fleckp, k_ion, N_H1, dvol,&
                                         is_empty_cell_event)
   use Grid_data, only : gr_geometry
-  use Simulation_data, only : clight, mH, ev2erg
-  use Particles_data, only : pt_is_photoionization, pt_ABS_ID,&
+  use Simulation_data, only : clight, mH
+  use Particles_data, only : ev2erg, pt_is_photoionization, pt_ABS_ID,&
                              pt_is_corrdl, pt_is_cont_photo,&
                              pt_is_deposit_ion_momentum
   use Multispecies_interface, only : Multispecies_getProperty
@@ -698,10 +699,9 @@ end subroutine deposit_ionizing_radiation
 
 
 subroutine eff_scatter_ionizing_mcp(solnVec, cellID, particle, is_caseB)
-  use Simulation_data, only : ev2erg
   use Driver_interface, only : Driver_abortFlash
   use new_mcp, only : sample_iso_velocity, sample_energy
-  use Particles_data, only : pt_is_rm_mcps_caseB
+  use Particles_data, only : ev2erg, pt_is_rm_mcps_caseB
   implicit none
 
 #include "constants.h"

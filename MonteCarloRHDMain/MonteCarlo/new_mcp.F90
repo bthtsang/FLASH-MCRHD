@@ -334,9 +334,9 @@ end subroutine sample_time
 
 
 subroutine sample_energy(solnData, cellID, eps)
-  use Particles_data, only : pt_is_grey, pt_grey_eps,&
+  use Particles_data, only : ev2erg, pt_is_mcp_grey, pt_grey_eps,&
                              pt_energy_min_eV, pt_energy_max_eV
-  use Simulation_data, only : kB, ev2erg
+  use Simulation_data, only : kB
   use random, only : rand
 
   implicit none
@@ -353,7 +353,7 @@ subroutine sample_energy(solnData, cellID, eps)
 
   temp = solnData(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
-  if (pt_is_grey) then
+  if (pt_is_mcp_grey) then
     eps = pt_grey_eps
   else ! Thermal emission
     do 
