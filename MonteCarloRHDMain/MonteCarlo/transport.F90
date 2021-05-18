@@ -2407,6 +2407,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
     end if
 
     ! no dshift needed, mcp_eps already in comoving frame
+    ! dvol combined with dtnew (in lab, in rhd.F90) = dvol_0 * dt_0
     delta_e = (mcp_eps * (old_weight - new_weight)) / (rho * dvol)
     call cellAddVar(solnVec, cellID, ABSE_VAR, delta_e)
 
@@ -2418,6 +2419,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   if (pt_is_deposit_urad) then
     mcp_energy = mcp_eps * old_weight
     !u_rad = mcp_energy * dl / (dvol * clight * dtNew)
+    ! here dvol * dtNew (lab) = dvol_0 * dt_0, no need for transforms
     u_rad = (mcp_energy / dvol) * (dl / (clight * dtNew))
     call cellAddVar(solnVec, cellID, URAD_VAR, u_rad)
   end if
