@@ -199,6 +199,7 @@ subroutine Particles_init ( restart)
 
   ! parameter for velocity-dependent, or special relativistic applications
   call RuntimeParameters_get ("pt_is_veldp", pt_is_veldp)
+  call RuntimeParameters_get ("pt_is_mcp_grey", pt_is_mcp_grey)
 
   ! We create Particles_specifyMethods() at setup time, which is used 
   ! to populate PART_TYPE, PART_INITMETHOD, PART_MAPMETHOD in pt_typeInfo.
