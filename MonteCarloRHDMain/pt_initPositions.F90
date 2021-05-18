@@ -69,7 +69,7 @@ subroutine pt_initPositions (blockID,success)
   use Simulation_data, only : a_rad
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
-  use relativity, only : transform_comoving_to_lab
+  use relativity, only : compute_gamma, transform_comoving_to_lab
   use Driver_interface, only : Driver_abortFlash
 
   implicit none
@@ -89,6 +89,7 @@ subroutine pt_initPositions (blockID,success)
   integer :: ii, p, i, j, k
   real, dimension(MDIM) :: newxyz, newvel
   real :: newenergy, dshift
+  real :: gamm_fac, dV_0
 
   ! Commenting out stub code
   !success = .true. ! DEV: returns true because this stub creates no particles,
@@ -126,9 +127,17 @@ subroutine pt_initPositions (blockID,success)
         cellID(1) = i
 
         call Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
+        dV_0 = dV  ! default the same
+        ! convert lab-frame volume to CMF volume
+        if (pt_is_veldp) then
+          call compute_gamma(cellID, solnVec, gamm_fac)
+          dV_0 = gamm_fac * dV
+        end if
 
         Tgas = solnVec(TEMP_VAR, i, j, k)
-        totalE = a_rad * (Tgas**4) * dV
+
+        ! radiation energy in CMF
+        totalE = a_rad * (Tgas**4) * dV_0
         weight = totalE / pt_initradfield_num
 
         ! Start loop to sample MCPs
