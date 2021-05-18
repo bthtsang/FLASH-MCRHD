@@ -173,4 +173,29 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
 
 end subroutine 
 
+! Subroutine to compute local cells' gamma factors
+subroutine compute_gamma(cellID, solnVec, gamm_fac)
+  use Simulation_data, only : clight
+
+  implicit none
+#include "Flash.h"
+
+  ! Input/output
+  integer, dimension(MDIM), intent(in) :: cellID
+  real, pointer :: solnVec(:,:,:,:)
+  real, intent(out) :: gamm_fac
+
+  ! aux variables
+  real, dimension(MDIM) :: v_gas
+  real :: beta2
+
+  v_gas = solnVec(VELX_VAR:VELZ_VAR,&
+            cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  v_gas = v_gas / clight
+
+  beta2 = dot_product(v_gas, v_gas)
+  gamm_fac = 1.0/sqrt(1.0 - beta2)
+
+end subroutine compute_gamma
+
 end module relativity
