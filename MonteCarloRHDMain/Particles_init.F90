@@ -58,6 +58,10 @@ subroutine Particles_init ( restart)
   integer :: i,j
   logical :: isLattice, isWithDensity
 
+  ! For non-grey RT energy grid initialization
+  real :: max_energy, min_energy, denergy
+  integer :: ii
+
 !-------------------------------------------------------------------------------
   
 
@@ -163,6 +167,8 @@ subroutine Particles_init ( restart)
 
   call RuntimeParameters_get ("pt_energy_min_eV", pt_energy_min_eV)
   call RuntimeParameters_get ("pt_energy_max_eV", pt_energy_max_eV)
+  call RuntimeParameters_get ("pt_num_energy_bins", pt_num_energy_bins)
+  call RuntimeParameters_get ("pt_is_log_energy_grid", pt_is_log_energy_grid)
 
   call RuntimeParameters_get ("pt_is_corrdl", pt_is_corrdl)
   call RuntimeParameters_get ("pt_is_deposit_energy", pt_is_deposit_energy)
@@ -200,6 +206,54 @@ subroutine Particles_init ( restart)
   ! parameter for velocity-dependent, or special relativistic applications
   call RuntimeParameters_get ("pt_is_veldp", pt_is_veldp)
   call RuntimeParameters_get ("pt_is_mcp_grey", pt_is_mcp_grey)
+
+  ! Setting up the energy grid for non-grey RT
+  if (pt_meshMe == 0) then
+    print *, "Radiation energy range:", pt_energy_min_eV, pt_energy_max_eV
+  end if
+  if (.not. pt_is_grey) then
+    allocate(pt_energy_grid(pt_num_energy_bins+1)) ! energy bin edges
+    allocate(pt_energy_centers(pt_num_energy_bins))
+    allocate(pt_delta_energy(pt_num_energy_bins))
+
+    ! Initialize the energy grid info
+    min_energy = pt_energy_min_eV * ev2erg
+    max_energy = pt_energy_max_eV * ev2erg
+
+    if (pt_is_log_energy_grid) then
+      min_energy = log10(min_energy)
+      max_energy = log10(max_energy)
+    end if
+
+    denergy = (max_energy - min_energy) / pt_num_energy_bins
+
+    ! Initialize energy grid edges
+    pt_energy_grid(1) = min_energy   ! leftmost energy
+    do ii = 1, pt_num_energy_bins
+      pt_energy_grid(ii) = min_energy + ii*denergy
+    end do
+
+    ! convert log grid values to linear values
+    if (pt_is_log_energy_grid) then
+      do ii = 1, pt_num_energy_bins + 1
+        pt_energy_grid(ii) = 10.0**(pt_energy_grid(ii))
+      end do
+    end if
+
+    ! Populate the centers and deltas, assuming linear grid values
+    do ii = 1, pt_num_energy_bins
+      pt_delta_energy(ii) = pt_energy_grid(ii+1) - pt_energy_grid(ii)
+      pt_energy_centers(ii) = 0.5*(pt_energy_grid(ii+1) + pt_energy_grid(ii))
+    end do
+
+    if (pt_meshMe == 0) then
+      print *, "[Partciles_init]: Initialized non-grey energy grid with",&
+               pt_num_energy_bins, "bins."
+      print *, "Boundaries at:", pt_energy_grid(1),&
+                                 pt_energy_grid(pt_num_energy_bins)
+    end if
+  end if
+
 
   ! We create Particles_specifyMethods() at setup time, which is used 
   ! to populate PART_TYPE, PART_INITMETHOD, PART_MAPMETHOD in pt_typeInfo.

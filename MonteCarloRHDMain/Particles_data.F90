@@ -161,8 +161,14 @@ module Particles_data
   logical, save :: pt_RadioEmission
   integer, save :: pt_num_rmcps_tstep
 
+  real, save    :: ev2erg = 1.6021772e-12
   real, save    :: pt_energy_min_eV, pt_energy_max_eV
   real, save    :: pt_energy_min_erg, pt_energy_max_erg
+  integer, save :: pt_num_energy_bins
+  logical, save :: pt_is_log_energy_grid
+  real, save, allocatable, dimension(:) :: pt_energy_grid
+  real, save, allocatable, dimension(:) :: pt_energy_centers
+  real, save, allocatable, dimension(:) :: pt_delta_energy
 
   logical, save :: pt_is_corrdl
   logical, save :: pt_is_deposit_urad, pt_is_deposit_energy,&

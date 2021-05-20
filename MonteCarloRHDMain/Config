@@ -156,6 +156,12 @@ PARAMETER pt_energy_min_eV     REAL 1.0
 D pt_energy_max_eV        Maximum photon energy for non-grey application
 PARAMETER pt_energy_max_eV     REAL 20.0
 
+D pt_num_energy_bins        Number of energy/nu bins for non-grey applications
+PARAMETER pt_num_energy_bins     INTEGER 100
+
+D pt_is_log_energy_grid        Whether to use log spacing for the energy grid
+PARAMETER pt_is_log_energy_grid     BOOLEAN TRUE
+
 D pt_is_corrdl            Whether to correct for energy absorbed within dt
 PARAMETER pt_is_corrdl         BOOLEAN TRUE
 
