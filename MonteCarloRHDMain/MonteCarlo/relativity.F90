@@ -4,7 +4,7 @@ module relativity
   contains
 
 ! Higher level subroutine to apply Lorentz transformation
-subroutine transform_lab_to_comoving(cellID, solnVec, particle, dshift)
+subroutine transform_lab_to_comoving(cellID, solnVec, dt, particle, dshift)
 
   implicit none
 #include "constants.h"
@@ -12,26 +12,28 @@ subroutine transform_lab_to_comoving(cellID, solnVec, particle, dshift)
 
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
+  real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   real, intent(out) :: dshift
 
-  call lorentz_transformation(cellID, solnVec, .false., particle, dshift)
+  call lorentz_transformation(cellID, solnVec, .false., dt, particle, dshift)
 
 end subroutine transform_lab_to_comoving
 
 
 ! Higher level subroutine to apply Lorentz transformation
-subroutine transform_comoving_to_lab(cellID, solnVec, particle, dshift)
+subroutine transform_comoving_to_lab(cellID, solnVec, dt, particle, dshift)
 
   implicit none
 #include "constants.h"
 #include "Flash.h"
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
+  real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   real, intent(out) :: dshift
 
-  call lorentz_transformation(cellID, solnVec, .true., particle, dshift)
+  call lorentz_transformation(cellID, solnVec, .true., dt, particle, dshift)
 
 end subroutine transform_comoving_to_lab
 
@@ -42,7 +44,7 @@ end subroutine transform_comoving_to_lab
 ! frequency (ENER_PART_PROP).
 ! The weight (number of photons) should conserve under
 ! the transformation (NUMP_PART_PROP).
-subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
+subroutine lorentz_transformation(cellID, solnVec, tolab, dt, particle, dshift)
   use Driver_interface, only : Driver_abortFlash
   use Simulation_data, only : clight
   use spherical, only : get_cartesian_position, get_spherical_position
@@ -55,6 +57,7 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
   logical, intent(in) :: tolab
+  real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   real, intent(out) :: dshift
 
@@ -65,6 +68,7 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   real :: v_norm
   real :: vdx, v2
   real :: t_mcp, t_mcp_new
+  real :: ptime, ptime_new
 
   ! Extract MCP and gas (cell) velocity
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
@@ -75,7 +79,12 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   v_gas = v_gas / clight
 
   ! Extract MCP's position and time
-  t_mcp = particle(TREM_PART_PROP)
+  ! t = 0 corresponds to the beginning of timestep
+  ptime = particle(TREM_PART_PROP)
+  t_mcp = dt - ptime
+  ! If MCP has negative dt => only new pt_initPositions
+  if (dt < 0.0) t_mcp = 0.0
+
   x_mcp = particle(POSX_PART_PROP:POSZ_PART_PROP)
   if (gr_geometry == SPHERICAL) then
     call get_cartesian_position(x_mcp, x_mcp_cart)
@@ -91,9 +100,9 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   end if
 
   ! Computing relativistic quantities
-  v2 = dot_product(v_gas, v_gas) 
+  v2 = dot_product(v_gas, v_gas) ! (v/c)^2 
   beta2 = v2
-  vdd  = dot_product(v_gas, v_mcp)
+  vdd  = dot_product(v_gas, v_mcp) ! v dot n / c
   gamm = 1.0/sqrt(1.0 - beta2)
 
   ! dshift is the epsilon_0/epsilon factor in the LT,
@@ -102,10 +111,10 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   dshift = gamm*(1.0 - vdd)
 
   ! Compute new position
-  vdx = dot_product(v_gas, x_mcp/clight)
-  x_mcp_new(1) = x_mcp(1) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(1)
-  x_mcp_new(2) = x_mcp(2) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(2)
-  x_mcp_new(3) = x_mcp(3) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(3)
+  vdx = dot_product(v_gas, x_mcp/clight) ! (v dot x/c)^2
+  x_mcp_new(1) = x_mcp(1) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(1)*clight
+  x_mcp_new(2) = x_mcp(2) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(2)*clight
+  x_mcp_new(3) = x_mcp(3) + ((gamm - 1.0)*vdx/v2 - gamm*t_mcp)*v_gas(3)*clight
   !x_mcp_new = x_mcp
 
   if (gr_geometry == SPHERICAL) then
@@ -114,6 +123,10 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
   end if
   ! Compute new time
   t_mcp_new = gamm*(t_mcp - vdx)
+
+  ptime_new = dt - t_mcp_new
+  ! case dt = -1.0
+  if (dt < 0.0) ptime_new = ptime ! leave it unchanged
 
   ! Update photon propagation direction to new frame
   v_mcp_new(1) = (v_mcp(1) - gamm*v_gas(1)*(1.0 - gamm*vdd/(gamm+1.0)))/dshift
@@ -127,7 +140,7 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, particle, dshift)
 
   ! Update new position and time
   particle(POSX_PART_PROP:POSZ_PART_PROP) = x_mcp_new
-  particle(TREM_PART_PROP) = t_mcp_new
+  particle(TREM_PART_PROP) = ptime_new
 
   ! Update photon energy to new frame 
   particle(ENER_PART_PROP) = dshift*particle(ENER_PART_PROP)

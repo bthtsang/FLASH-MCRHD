@@ -62,10 +62,14 @@
 
 subroutine pt_initPositions (blockID,success)
   use Particles_data, only : pt_numLocal, pt_initradfield_num, pt_is_veldp,&
-                             pt_maxPerProc, particles, pt_meshMe
+                             pt_maxPerProc, particles, pt_meshMe,&
+                             pt_indexList, pt_indexCount
+  use pt_interface, only :  pt_updateTypeDS
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
                              Grid_getDeltas, Grid_getSingleCellVol,&
-                             Grid_getBlkPtr, Grid_releaseBlkPtr
+                             Grid_getBlkPtr, Grid_releaseBlkPtr,&
+                             Grid_outsideBoundBox,&
+                             Grid_sortParticles, Grid_moveParticles
   use Simulation_data, only : a_rad
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
@@ -85,9 +89,14 @@ subroutine pt_initPositions (blockID,success)
   real, dimension(MDIM) :: deltaCell
   integer, dimension(MDIM) :: cellID
   real, pointer :: solnVec(:,:,:,:)
+  integer, dimension(MAXBLOCKS,NPART_TYPES) :: particlesPerBlk
   real :: Tgas, dV, totalE, weight, mcpweight
   integer :: ii, p, i, j, k
   real, dimension(MDIM) :: newxyz, newvel
+  real, dimension(MDIM) :: newpos
+  logical :: isoutside
+  integer, dimension(MDIM) :: neghdir
+  integer :: num_LT_off
   real :: newenergy, dshift
   real :: gamm_fac, dV_0
 
@@ -116,6 +125,7 @@ subroutine pt_initPositions (blockID,success)
 
   call Grid_getBlkPtr(blockID, solnVec, CENTER)
 
+  num_LT_off = 0
   ! Do the loop over cells
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     cellID(3) = k
@@ -157,6 +167,7 @@ subroutine pt_initPositions (blockID,success)
 
           ! TREM should be -1.0 because it's an initial field
           particles(TREM_PART_PROP,p) = -1.0
+          particles(ISNW_PART_PROP,p) = 1.0
 
           particles(POSX_PART_PROP:POSZ_PART_PROP,p) = newxyz
           particles(VELX_PART_PROP:VELZ_PART_PROP,p) = newvel
@@ -175,7 +186,12 @@ subroutine pt_initPositions (blockID,success)
           if (pt_is_veldp) then
             ! call some conversion function to convert
             call transform_comoving_to_lab(cellID, solnVec,&
-                          particles(:,p), dshift)
+                          -1.0, particles(:,p), dshift)  ! dtNew = -1 as dummy
+
+            ! check whether the mcp is still contained in current block
+            newpos = particles(POSX_PART_PROP:POSZ_PART_PROP, p)
+            call Grid_outsideBoundBox(newpos, bndBox, isoutside, neghdir)
+            if (isoutside) num_LT_off = num_LT_off + 1
           end if
 
         end do ! done MCP sampling
@@ -188,6 +204,23 @@ subroutine pt_initPositions (blockID,success)
 
   ! Update final particle count
   pt_numLocal = p
+
+  ! Do a moveParticles if isveldp is active.
+  ! MCPs could be Lorentz transformed off the parent block
+  if (pt_is_veldp) then
+    print *, "Rank", pt_meshMe, "has", num_LT_off, "Lorentz-boosted off block."
+    call Grid_moveParticles(particles, NPART_PROPS, pt_maxPerProc,&
+                            pt_numLocal, pt_indexList, pt_indexCount, .false.)
+#ifdef TYPE_PART_PROP
+    call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
+                            pt_maxPerProc, particlesPerBlk, BLK_PART_PROP,&
+                            TYPE_PART_PROP)
+#else
+    call Grid_sortParticles(particles, NPART_PROPS, pt_numLocal, NPART_TYPES,&
+                            pt_maxPerProc, particlesPerBlk, BLK_PART_PROP)
+#endif
+    call pt_updateTypeDS(particlesPerBlk)
+  end if ! only do this when LT is on
 
   ! success check
   if (pt_numLocal > pt_maxPerProc) then

@@ -3,7 +3,7 @@ module scattering
   implicit none
   contains
 
-subroutine scatter_mcp(solnVec, cellID, particle,&
+subroutine scatter_mcp(solnVec, cellID, dt, particle,&
                        is_elastic, is_isotropic)
   use Driver_interface, only : Driver_abortFlash
   use Particles_data, only : pt_is_veldp
@@ -18,6 +18,7 @@ subroutine scatter_mcp(solnVec, cellID, particle,&
   ! Input/output
   real, pointer :: solnVec(:,:,:,:)
   integer, dimension(MDIM), intent(in) :: cellID
+  real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   logical, intent(in) :: is_elastic, is_isotropic
 
@@ -30,7 +31,7 @@ subroutine scatter_mcp(solnVec, cellID, particle,&
   temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   if (pt_is_veldp) then
-    call transform_lab_to_comoving(cellID, solnVec, particle, dshift)
+    call transform_lab_to_comoving(cellID, solnVec, dt, particle, dshift)
   end if
 
   ! Getting MCP information
@@ -69,7 +70,7 @@ subroutine scatter_mcp(solnVec, cellID, particle,&
   particle(NPIN_PART_PROP) = mcp_w_ini_as
 
   if (pt_is_veldp) then
-    call transform_comoving_to_lab(cellID, solnVec, particle, dshift)
+    call transform_comoving_to_lab(cellID, solnVec, dt, particle, dshift)
   end if
 
 end subroutine scatter_mcp

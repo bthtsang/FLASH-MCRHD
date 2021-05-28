@@ -444,7 +444,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
             if (pt_is_veldp) then
               ! call some conversion function to convert
               call transform_comoving_to_lab(cellID, solnVec,&
-                            newparticle, dshift)
+                            dtNew, newparticle, dshift)
             end if
 
 

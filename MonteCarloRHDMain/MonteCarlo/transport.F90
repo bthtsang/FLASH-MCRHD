@@ -16,6 +16,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   use Particles_interface, only : Particles_getGlobalNum
   use Particles_data, only : pt_typeInfo, pt_maxPerProc, pt_indexList,&
                              pt_indexCount, pt_meshMe, pt_numLocal
+  use pt_interface, only :  pt_updateTypeDS
   use Particles_data, only : pt_use_fromPos, &
                              pt_is_eff_scattering, pt_max_rt_iterations,&
                              pt_is_scat_elastic, pt_is_escat_elastic,&
@@ -119,6 +120,16 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: crossproc_tag
   integer :: n_it_current
   integer :: old_rflvl, new_rflvl
+
+  ! LT debugging
+  real, dimension(MDIM) :: pos_b4_LT, pos_af_LT
+  real, dimension(MDIM) :: vel_b4_LT, vel_af_LT
+  real, dimension(MDIM) :: pos_b4_period, pos_af_period
+  real :: trem_b4_LT, trem_af_LT
+  real :: init_posx, final_posx
+
+
+  integer, dimension(MDIM) :: xcellID4period
 
   real :: r_in, r_out, theta_in, theta_out
 
@@ -359,10 +370,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
             if (mcp_fate == pt_SCAT_ID) then
-              call scatter_mcp(solnVec, cellID, particles(:,i),&
+              call scatter_mcp(solnVec, cellID, dtNew, particles(:,i),&
                                pt_is_scat_elastic, pt_is_scat_iso)
             else if (mcp_fate == pt_ESCAT_ID) then
-              call scatter_mcp(solnVec, cellID, particles(:,i),&
+              call scatter_mcp(solnVec, cellID, dtNew, particles(:,i),&
                                pt_is_escat_elastic, pt_is_escat_iso)
             else if (mcp_fate == pt_PION_ESCAT_ID) then
               call eff_scatter_ionizing_mcp(solnVec, cellID, particles(:,i),&
@@ -515,10 +526,16 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             ! For boundary crossing, 4/13 are corrected to 12/5.
             !call sanitize_xblock_cellID(cellID, xcellID)
             pos_after_period = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            pos_b4_LT = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            vel_b4_LT = particles(VELX_PART_PROP:VELZ_PART_PROP, i)
+            trem_b4_LT = particles(TREM_PART_PROP, i)
 
             call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
+            pos_af_LT = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            vel_af_LT = particles(VELX_PART_PROP:VELZ_PART_PROP, i)
+            trem_af_LT = particles(TREM_PART_PROP, i)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleckp, k_ion, N_H1, dvol,&
@@ -568,8 +585,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 call sanitize_phi_periodic_BCs(cellID, xcellID, &
                                            bndBox, deltaCell, particles(:,i))
                 ! Do the same check for Cartesian coordinate
+                pos_b4_period = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+                xcellID4period = xcellID
                 call sanitize_cart_periodic_BCs(cellID, xcellID, &
                                            bndBox, deltaCell, particles(:,i))
+                pos_af_period = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
                 ! xcellID is updated to legal values also
                 call sanitize_xblock_cellID(cellID, xcellID)
@@ -601,6 +621,13 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                     print *, ">pos_after_push", pos_after_push
                     print *, ">pos_after_period", pos_after_period
                     print *, ">pos_for_negh", pos_for_negh
+                    print *, ">pos_b4_period", pos_b4_period
+                    print *, ">pos_af_period", pos_af_period
+                    print *, ">pos_b4_LT", pos_b4_LT
+                    print *, ">pos_af_LT", pos_af_LT
+                    print *, ">trem_b4_LT", trem_b4_LT
+                    print *, ">trem_af_LT", trem_af_LT
+                    print *, ">xcellID4period", xcellID4period
                     print *, ">neghdir", neghdir
                     print *, ">WrongBCurBlk", currentBlk
                     print *, ">WrongBlkProcID", neghID(BLKNO), neghID(PROCNO)
@@ -693,6 +720,12 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               print *, ">pos_after_push", pos_after_push
               print *, ">pos_after_period", pos_after_period
               print *, ">pos_for_negh", pos_for_negh
+              print *, ">pos_b4_LT", pos_b4_LT
+              print *, ">pos_af_LT", pos_af_LT
+              print *, ">vel_b4_LT", vel_b4_LT
+              print *, ">vel_af_LT", vel_af_LT
+              print *, ">trem_b4_LT", trem_b4_LT
+              print *, ">trem_af_LT", trem_af_LT
               print *, "actualVel", particles(VELX_PART_PROP:VELZ_PART_PROP, i)
               print *, "outside?", isoutside
               print *, "neghDir", neghDir
@@ -2375,7 +2408,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
 
   dshift = 1.0d0
   if (pt_is_veldp) then 
-    call transform_lab_to_comoving(cellID, solnVec, particle, dshift)
+    call transform_lab_to_comoving(cellID, solnVec, dtNew, particle, dshift)
   end if
 
   old_weight  = particle(NUMP_PART_PROP)  ! frame invariant
@@ -2495,7 +2528,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   end if
 
   if (pt_is_veldp) then 
-    call transform_comoving_to_lab(cellID, solnVec, particle, dshift)
+    call transform_comoving_to_lab(cellID, solnVec, dtNew, particle, dshift)
   end if
 
 end subroutine deposit_energy_momentum
