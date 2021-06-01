@@ -47,12 +47,14 @@ subroutine Particles_advance (dtOld,dtNew)
   use Particles_interface, ONLY: Particles_sinkMoveParticles, Particles_sinkSortParticles, &
                                  Particles_sinkAdvanceParticles, &
                                  Particles_sinkCreateAccrete
+  use Paramesh_comm_data, only : amr_mpi_meshComm
   implicit none
 
 #include "constants.h"  
 #include "Flash.h"
 #include "Particles.h"
 #include "GridParticles.h"
+#include "mpif.h"
   
   real, INTENT(in)  :: dtOld, dtNew
 
@@ -65,6 +67,7 @@ subroutine Particles_advance (dtOld,dtNew)
   logical,parameter :: regrid=.false.
   logical,save      :: gcMaskLogged = .FALSE.
   integer       :: pfor,pbak, lostNow
+  integer       :: numLost_global, ierr
 
 !!------------------------------------------------------------------------------
   ! Don't do anything if runtime parameter isn't set
@@ -216,6 +219,12 @@ subroutine Particles_advance (dtOld,dtNew)
      do i = 1,lostNow
         particles(:,pbak+i)=particles(:,pt_numLocal+i)
      end do
+
+     call MPI_AllReduce(pt_numLost, numLost_global, 1, MPI_INTEGER,&
+                        MPI_SUM, amr_mpi_meshComm, ierr)
+     if (pt_meshMe == 0) then
+       print *, "A total of", numLost_global, "MCPs lost."
+     end if
   end if
 
 
