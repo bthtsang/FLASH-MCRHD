@@ -28,7 +28,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                              pt_quadrant_III, pt_quadrant_IV,&
                              pt_is_veldp,&
                              pt_is_photoionization, pt_is_es_photoionization,&
-                             pt_is_caseB, pt_is_veldp
+                             pt_is_caseB, pt_is_veldp,&
+                             pt_keepLostParticles
   use Paramesh_comm_data, only : amr_mpi_meshComm
   use Driver_interface, only : Driver_abortFlash
   use spherical, only : get_cartesian_position, get_spherical_velocity,&
@@ -120,6 +121,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   integer :: crossproc_tag
   integer :: n_it_current
   integer :: old_rflvl, new_rflvl
+
+  ! LOST MCPs
+  integer :: pfor
 
   ! LT debugging
   real, dimension(MDIM) :: pos_b4_LT, pos_af_LT
@@ -869,6 +873,26 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                             pt_maxPerProc, particlesPerBlk, BLK_PART_PROP)
 #endif
     call Timers_stop("MCP - sortParticles")
+
+    if(pt_keepLostParticles) then
+      ! Give LOST MCPs negative TREM
+      do i = 1, pt_maxPerProc
+        pfor = int(particles(BLK_PART_PROP,i))
+
+        if (pfor == LOST) then
+          particles(TREM_PART_PROP,i) = -1.0
+        end if
+      end do
+      ! Move LOST MCPs to the end of particles in the
+      ! end of Particles_advance, not here.
+    end if
+
+    ! particlesPerBlk(localnumblk:,ind) contains lost MCP count
+    ! Here we do not need to zero out the particlesPerBlk 
+    ! after the localnumblk index, keep the info and pt_numLocal.
+    !call Grid_getLocalNumBlks(localNumBlocks)
+    !particlesPerBlk(localNumBlocks+1:MAXBLOCKS, ind) = 0
+
     call pt_updateTypeDS(particlesPerBlk)
 
     num_done_local = sum(num_done_list)
