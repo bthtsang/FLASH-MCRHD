@@ -7,7 +7,8 @@ module emission
 ! Thermal and face emission
 subroutine emit_mcps(particles, p_count, dtNew, ind)
   use Particles_data, only : pt_maxPerProc, pt_maxnewnum, pt_numLocal,&
-                             pt_meshMe, pt_typeInfo
+                             pt_numLost, pt_meshMe, pt_typeInfo,&
+                             pt_keepLostParticles
   use Particles_interface, only : Particles_addNew 
   use Timers_interface, only : Timers_start, Timers_stop
   use Grid_interface, only : Grid_getBlkPtr, Grid_getListOfBlocks,&
@@ -49,6 +50,24 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
   call Timers_start("MCP Emission")
 
   call Grid_getListOfBlocks(LEAF, blkList, numofblks)
+
+  ! For taking care of LOST particle number
+  ! At this point, the call to the second moveParticles and sortParticles
+  ! in Particles_advance of the previous time step should have moved particles
+  ! to the correct processors.
+  ! On each processor, the follow should also be done:
+  ! (1) sorted MCPs in particles array in order of BLK, UNKNOWN, LOST,
+  ! NONEXISTENT (pt_numLcaol would include UNKNOWN and LOST);
+  ! (2) the keepLostParticles loop afterward would have updated pt_numLocal to not
+  ! include LOST MCPs;
+  ! (3) the LOST MCPs are placed at the end of the particles array.
+  !
+  ! Then, in the moveParticles call before this subroutine, moveParticles has
+  ! been called with the reduced pt_numLocal, so all LOST MCPs have been zeroed
+  ! out to NONEXISTENT. We just need to zero out pt_numLost to be consistent.
+  if(pt_keepLostParticles) then
+     pt_numLost = 0
+  end if
 
   ! Initializing new mcp arrays
   new_pos = 0.0d0
@@ -319,7 +338,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
             if (pt_is_veldp) then
               ! call some conversion function to convert
               call transform_comoving_to_lab(cellID, solnVec,&
-                            newparticle, dshift) 
+                            dtNew, newparticle, dshift) 
             end if
 
 
@@ -480,7 +499,7 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
             if (pt_is_veldp) then
               ! call some conversion function to convert
               call transform_comoving_to_lab(cellID, solnVec,&
-                            newparticle, dshift) 
+                            dtNew, newparticle, dshift) 
             end if
 
 
