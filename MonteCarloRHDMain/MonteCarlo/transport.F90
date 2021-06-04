@@ -552,6 +552,24 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
             !print *, "newcell", new_cellID
 
+            ! When veldp is on, LT may convert small -ve phi by += 2*pi,
+            ! which is a side effect of LT's correct behavior.
+            ! If using veldp, make sure the position after LT is the same
+            ! as the one before.
+            ! calling outsideBoundBox with the LT-ed position will not work
+            ! because the position is no longer in neghboring block and is not
+            ! consistent with the neghdir values.
+            if ((gr_geometry == SPHERICAL) .and. (pt_is_veldp)) then
+              ! The follow needs extra correction in case when phi = 2*pi + epsilon
+              ! Skip the tedious fix for now.
+!              if ((pos_b4_LT(KAXIS) < 0.0) .and. (pos_af_LT(KAXIS) > 0.0)) then
+!                particles(POSZ_PART_PROP, i) = particles(POSZ_PART_PROP, i) - 2*PI
+                !newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+!              end if
+              ! Enforce position invariant before and after LT
+              particles(POSZ_PART_PROP,i) = pos_b4_LT(KAXIS)
+            end if
+
             crossproc_tag = int(particles(TAG_PART_PROP,i))
 
             is_crossproc = .false.
@@ -613,6 +631,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                   if ((newPos(ii) < new_bndBox(LOW,ii)) .or.&
                       (newPos(ii) > new_bndBox(HIGH,ii))) then
                     print *, "StillWrongBlk", ii
+                    print *, "n_it_current", n_it_current
                     print *, ">cellID", cellID
                     print *, ">xcellID", xcellID
                     print *, ">xcellID_original", xcellID_original
@@ -666,6 +685,24 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 end do                
               end if
             end if ! if not (isoutside)
+
+            ! debugging position
+!            if ((abs(newPos(KAXIS) - 2*PI) < 1e-7) .or. (abs(newPos(KAXIS)) < 1e-7)) then
+!              if (newPos(KAXIS) < 1.0) then
+!                print *, "PIchk", newPos
+!              print *, "CrossP?", is_crossproc
+!              print *, "pos_before_adv", pos_before_adv
+!              print *, "pos_after_adv", pos_after_adv
+!              print *, "pos_after_push", pos_after_push
+            !  print *, "pos_after_period", pos_after_period
+!              print *, "pos_for_negh", pos_for_negh
+            !  print *, "pos_b4_period", pos_b4_period
+            !  print *, "pos_af_period", pos_af_period
+!              print *, "pos_b4_LT", pos_b4_LT
+!              print *, "pos_af_LT", pos_af_LT
+!              print *, "part tag", particles(TAG_PART_PROP,i)
+!              end if
+!            end if
 
 
             ! In case of negative crossing, I think it may not be
@@ -2427,6 +2464,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   real :: a_x, a_y, a_z
   real :: aa_x, aa_y, aa_z
   real :: as_x, as_y, as_z
+  real :: avg_weight
 
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
@@ -2474,9 +2512,17 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   end if
 
   if (pt_is_deposit_urad) then
-    mcp_energy = mcp_eps * old_weight
+    !mcp_energy = mcp_eps * old_weight
+    avg_weight = 0.5*(new_weight + old_weight)
+    mcp_energy = mcp_eps * avg_weight
     !u_rad = mcp_energy * dl / (dvol * clight * dtNew)
     ! here dvol * dtNew (lab) = dvol_0 * dt_0, no need for transforms
+    ! The dl_corr is constructed such that the MCP energy decays
+    ! as if the energy does not change much during the time step,
+    ! i.e., epsilon_new = epsilon_old*exp(-tau_correted).
+    ! In this case, the decay can be well-approximated as a linear one,
+    ! so the "average mcp energy" can be written as 0.5*(new + old), and
+    ! the dl is the corrected distance.
     u_rad = (mcp_energy / dvol) * (dl / (clight * dtNew))
     call cellAddVar(solnVec, cellID, URAD_VAR, u_rad)
   end if
