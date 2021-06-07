@@ -2491,8 +2491,8 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
     dl_corr = (1.0d0 - exp(-dtau)) / dtau
   end if
 
-  dl = dl * dl_corr
-  dtau = dtau * dl_corr
+  dl = dl !* dl_corr
+  dtau = dtau !* dl_corr
 
   if (pt_is_deposit_energy) then
     new_weight = old_weight * exp(-dtau)
@@ -2513,7 +2513,8 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
 
   if (pt_is_deposit_urad) then
     !mcp_energy = mcp_eps * old_weight
-    avg_weight = 0.5*(new_weight + old_weight)
+    !avg_weight = 0.5*(new_weight + old_weight)
+    avg_weight = old_weight*dl_corr
     mcp_energy = mcp_eps * avg_weight
     !u_rad = mcp_energy * dl / (dvol * clight * dtNew)
     ! here dvol * dtNew (lab) = dvol_0 * dt_0, no need for transforms
