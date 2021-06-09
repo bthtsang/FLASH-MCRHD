@@ -146,6 +146,7 @@ module Particles_data
   logical, save :: pt_PointEmission, pt_PointPulse
   real, save    :: pt_PointPulseErad
   real, save    :: pt_PointLuminosity, pt_PointSrcPosOffset
+  real, save    :: pt_PointTemp
   integer, save :: pt_num_pmcps_tstep
   integer, save :: originprocID, originblkID
 
@@ -195,5 +196,10 @@ module Particles_data
 
   logical, save    :: pt_is_veldp
   logical, save    :: pt_is_mcp_grey
+
+  integer, save    :: pt_samp_mode
+  integer, parameter :: pt_samp_uniform = 0
+  integer, parameter :: pt_samp_Tgas =  1
+  integer, parameter :: pt_samp_fixedT = 2
 
 end module Particles_data

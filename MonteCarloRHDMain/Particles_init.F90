@@ -168,6 +168,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_PointPulse", pt_PointPulse)
   call RuntimeParameters_get ("pt_PointPulseErad", pt_PointPulseErad)
   call RuntimeParameters_get ("pt_PointLuminosity", pt_PointLuminosity)
+  call RuntimeParameters_get ("pt_PointTemp", pt_PointTemp)
   call RuntimeParameters_get ("pt_PointSrcPosOffset", pt_PointSrcPosOffset)
   call RuntimeParameters_get ("pt_num_pmcps_tstep", pt_num_pmcps_tstep)
 
@@ -212,6 +213,7 @@ subroutine Particles_init ( restart)
   ! parameter for velocity-dependent, or special relativistic applications
   call RuntimeParameters_get ("pt_is_veldp", pt_is_veldp)
   call RuntimeParameters_get ("pt_is_mcp_grey", pt_is_mcp_grey)
+  call RuntimeParameters_get ("pt_samp_mode", pt_samp_mode)
 
   ! Setting up the energy grid for non-grey RT
   if (pt_meshMe == 0) then

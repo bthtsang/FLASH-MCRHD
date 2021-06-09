@@ -69,6 +69,9 @@ PARAMETER pt_is_grey BOOLEAN TRUE
 D pt_is_mcp_grey         Whether to use constant energy/nu for MCPs
 PARAMETER pt_is_mcp_grey BOOLEAN TRUE
 
+D pt_samp_mode           Mode to sample MCP energy when not is_mcp_grey
+PARAMETER pt_samp_mode   INTEGER 0
+
 D pt_is_kt_opac         Whether to use the \propto T^2 opacity law from KT12.
 PARAMETER pt_is_kt_opac BOOLEAN FALSE
 
@@ -155,6 +158,9 @@ PARAMETER pt_PointPulseErad  REAL 1.0e40
 
 D pt_PointLuminosity      Constant Luminosity (in cgs) of the point source
 PARAMETER pt_PointLuminosity      REAL 4.0e33
+
+D pt_PointTemp            Constant temperature (in K) of the point source
+PARAMETER pt_PointTemp      REAL 6000.0
 
 D pt_PointSrcPosOffset    Positional offset (in all xyz, units of dx) for the point source
 PARAMETER pt_PointSrcPosOffset    REAL 1.0e-3
