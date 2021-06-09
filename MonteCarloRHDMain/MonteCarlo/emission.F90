@@ -209,7 +209,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
               pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
-              pt_is_veldp, pt_marshak_eos
+              pt_is_veldp, pt_marshak_eos, pt_samp_Tgas
   use Grid_interface, only : Grid_getBlkIndexLimits,&
               Grid_getBlkBoundBox, Grid_getDeltas
   use Simulation_data, only : R, sigma, a_rad
@@ -321,7 +321,7 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
             call sample_iso_velocity(newvel)
 
-            call sample_energy(solnVec, cellID, newenergy)
+            call sample_energy(solnVec, cellID, pt_samp_Tgas, -1.0, newenergy)
             weight_per_mcp = dE_per_mcp / newenergy
 
             ! Initialization
@@ -367,7 +367,8 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
            now_num, now_pos, now_time, &
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_RadioEmission,&
-                             pt_num_rmcps_tstep, pt_is_veldp
+                             pt_num_rmcps_tstep, pt_is_veldp,&
+                             pt_samp_Tgas
   use Grid_interface, only : Grid_getBlkIndexLimits,&
               Grid_getBlkBoundBox, Grid_getDeltas
   use opacity, only : calc_abs_opac
@@ -482,7 +483,7 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
 
             call sample_iso_velocity(newvel)
 
-            call sample_energy(solnVec, cellID, newenergy)
+            call sample_energy(solnVec, cellID, pt_samp_Tgas, -1.0, newenergy)
             weight_per_mcp = dE_per_mcp / newenergy
 
             ! Initialization
@@ -530,10 +531,10 @@ subroutine point_emission(blockID, solnVec, dtNew,&
                               sim_yMax, sim_yMin,&
                               sim_zMax, sim_zMin
   use Particles_data, only : pt_maxnewnum, pt_PointEmission, pt_PointPulse,&
-                             pt_PointPulseErad,&
+                             pt_PointPulseErad, pt_PointTemp,&
                              pt_PointLuminosity, pt_PointSrcPosOffset,&
                              pt_num_pmcps_tstep, pt_meshMe,&
-                             originblkID, originprocID
+                             originblkID, originprocID, pt_samp_mode
   use Grid_interface, only : Grid_getDeltas, Grid_getBlkIDFromPos,&
                              Grid_getListOfBlocks
   use Paramesh_comm_data, only : amr_mpi_meshComm
@@ -651,7 +652,8 @@ subroutine point_emission(blockID, solnVec, dtNew,&
       ! Use cell information for sampling MCP frequency,
       ! constant eps in the gray case
       call get_cellID(bndBox, deltaCell, newxyz, cellID)
-      call sample_energy(solnVec, cellID, newenergy)
+      call sample_energy(solnVec, cellID, pt_samp_mode,&
+                         pt_PointTemp, newenergy)
       weight_per_mcp = dE_per_mcp / newenergy
 
       ! Record the MCP attributes
@@ -677,7 +679,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_FacePlanckTemp, pt_constFaceFlux,&
                              pt_is_radial_face_vel, pt_is_iso_face_vel,&
                              pt_is_therm_face_vel, pt_smlpush,&
-                             pt_num_fmcps_percell, pt_percell_reg_dt
+                             pt_num_fmcps_percell, pt_percell_reg_dt,&
+                             pt_samp_mode
   use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
                              Grid_getBlkBC, Grid_getBlkPhysicalSize
   use Grid_data, only: gr_geometry
@@ -917,7 +920,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 
           call get_cellID(bndBox, deltaCell, newxyz, cellID)
 
-          call sample_energy(solnVec, cellID, newenergy)
+          call sample_energy(solnVec, cellID, pt_samp_mode,&
+                             pt_FacePlanckTemp, newenergy)
           weight_per_mcp = dE_per_mcp / newenergy
 
           ! Record the MCP attributes

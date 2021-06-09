@@ -6,7 +6,7 @@ module scattering
 subroutine scatter_mcp(solnVec, cellID, dt, particle,&
                        is_elastic, is_isotropic)
   use Driver_interface, only : Driver_abortFlash
-  use Particles_data, only : pt_is_veldp
+  use Particles_data, only : pt_is_veldp, pt_samp_Tgas
   use new_mcp, only : sample_iso_velocity, sample_energy
   use relativity, only : transform_lab_to_comoving,&
                          transform_comoving_to_lab
@@ -46,7 +46,7 @@ subroutine scatter_mcp(solnVec, cellID, dt, particle,&
     mcp_eps_as = mcp_eps_bs
   else 
     ! Sample new photon energy thermally
-    call sample_energy(solnVec, cellID, mcp_eps_as)
+    call sample_energy(solnVec, cellID, pt_samp_Tgas, temp, mcp_eps_as)
   end if
   ! Conserve photon number if photon energy shifted
   mcp_energy_as = mcp_energy_bs ! MCP energy should conserve

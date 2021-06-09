@@ -258,7 +258,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
                              pt_is_es_photoionization, pt_maxnewnum,&
                              pt_is_apply_recombination, pt_is_realistic_recomb,&
                              pt_nH1_threshold, pt_is_caseB, pt_is_caseA_radeqm,&
-                             pt_num_r1mcps_tstep, pt_is_veldp
+                             pt_num_r1mcps_tstep, pt_is_veldp, pt_samp_mode
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
                              Grid_getDeltas, Grid_getSingleCellVol
   use new_mcp, only : sample_blk_position, sample_iso_velocity,&
@@ -427,7 +427,8 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
 
             call sample_iso_velocity(newvel)
 
-            call sample_energy(solnVec, cellID, newenergy)
+            call sample_energy(solnVec, cellID, pt_samp_mode,&
+                               -1.0, newenergy)
             weight_per_mcp = dE_per_mcp / newenergy
 
             ! Initialization

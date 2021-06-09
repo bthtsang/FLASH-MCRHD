@@ -333,9 +333,10 @@ subroutine sample_time(dtfull, dtrand)
 end subroutine sample_time
 
 
-subroutine sample_energy(solnData, cellID, eps)
+subroutine sample_energy(solnData, cellID, mode, fixed_temp, eps)
   use Particles_data, only : ev2erg, pt_is_mcp_grey, pt_grey_eps,&
-                             pt_energy_min_eV, pt_energy_max_eV
+                             pt_energy_min_eV, pt_energy_max_eV,&
+                             pt_samp_uniform, pt_samp_Tgas, pt_samp_fixedT
   use Simulation_data, only : kB
   use random, only : rand
 
@@ -345,25 +346,37 @@ subroutine sample_energy(solnData, cellID, eps)
   ! Input/output
   real, pointer :: solnData(:,:,:,:)
   integer, dimension(MDIM) :: cellID
+  integer, intent(in) :: mode
+  real, intent(in)  :: fixed_temp
   real, intent(out) :: eps
 
   ! aux variables
   real :: temp, x, f_x
   real, parameter :: f_max = 0.218886
 
-  temp = solnData(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   if (pt_is_mcp_grey) then
     eps = pt_grey_eps
   else ! Thermal emission
-    do 
+    ! split into different sampling modes
+    if (mode == pt_samp_uniform) then
       x = pt_energy_min_eV + rand() * (pt_energy_max_eV - pt_energy_min_eV)
-      x = (x * ev2erg) / (kB * temp)
-      f_x = f_planck(x)
-      if (f_max * rand() .LT. f_x) exit
-    end do
-
-    eps = (x * kB * temp) ! in erg
+      eps = x * ev2erg
+    else ! sampling planck function
+      select case(mode)
+        case (pt_samp_Tgas) 
+          temp = solnData(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+        case (pt_samp_fixedT)
+          temp = fixed_temp
+      end select
+      do 
+        x = pt_energy_min_eV + rand() * (pt_energy_max_eV - pt_energy_min_eV)
+        x = (x * ev2erg) / (kB * temp)
+        f_x = f_planck(x)
+        if (f_max * rand() .LT. f_x) exit
+      end do
+      eps = (x * kB * temp) ! in erg
+    end if
   end if
 
 end subroutine sample_energy
