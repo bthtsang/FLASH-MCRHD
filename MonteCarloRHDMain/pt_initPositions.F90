@@ -63,7 +63,7 @@
 subroutine pt_initPositions (blockID,success)
   use Particles_data, only : pt_numLocal, pt_initradfield_num, pt_is_veldp,&
                              pt_maxPerProc, particles, pt_meshMe,&
-                             pt_indexList, pt_indexCount
+                             pt_indexList, pt_indexCount, pt_samp_Tgas
   use pt_interface, only :  pt_updateTypeDS
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
                              Grid_getDeltas, Grid_getSingleCellVol,&
@@ -158,7 +158,7 @@ subroutine pt_initPositions (blockID,success)
 
           call sample_iso_velocity(newvel)
 
-          call sample_energy(solnVec, cellID, newenergy)
+          call sample_energy(solnVec, cellID, pt_samp_Tgas, -1.0, newenergy)
 
           ! initialize the particle
           ! Directly edit particles array
