@@ -5,7 +5,9 @@ module opacity
 
 subroutine calc_abs_opac(cellID, solnVec, energy, ka)
   use Particles_data, only : pt_is_grey, pt_grey_abs_opac, pt_dens_threshold,&
-                             pt_is_kt_opac
+                             pt_is_kt_opac, ev2erg,&
+                             pt_single_line_opac, pt_line_center_ener,&
+                             pt_line_width_ener, pt_line_center_kappa
   use Driver_interface,  ONLY : Driver_abortFlash
   implicit none
 
@@ -20,6 +22,7 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
 
   ! aux variables
   real :: rho, temp, temp_opac
+  real :: energy_eV, expterm
 
   rho = solnVec(DENS_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
   temp = solnVec(TEMP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
@@ -32,14 +35,27 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
       if (temp >= 150.0) temp_opac = 150.0
       ka = 0.10*(temp_opac/10.0)**2
     end if 
-
     ka = ka * rho
 
-    if (rho .lt. pt_dens_threshold) ka = 0.0d0
   else
-    call Driver_abortFlash("calc_abs_opac:&
-                           non-grey emission not implemented yet!")
+    if (pt_single_line_opac) then
+      ka = pt_line_center_kappa
+
+      energy_eV = energy/ev2erg ! convert from erg to eV
+      expterm = 0.5*((energy_eV-pt_line_center_ener)/pt_line_width_ener)**2
+      if (expterm <= 20.0) then
+        ka = ka * exp(-expterm)
+      else
+        ka = 0.0
+      end if
+    else
+      call Driver_abortFlash("calc_abs_opac: unknown non-grey opacity!")
+    end if
+    !call Driver_abortFlash("calc_abs_opac:&
+    !                       non-grey emission not implemented yet!")
   end if
+
+  if (rho .lt. pt_dens_threshold) ka = 0.0d0
 
 end subroutine calc_abs_opac
 

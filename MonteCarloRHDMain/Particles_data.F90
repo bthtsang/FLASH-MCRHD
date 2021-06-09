@@ -114,6 +114,7 @@ module Particles_data
   logical, save :: pt_use_fromPos
   logical, save :: pt_is_eff_scattering, pt_is_grey
   logical, save :: pt_is_kt_opac
+  logical, save :: pt_single_line_opac
   integer, save    :: pt_maxnewnum, pt_max_rt_iterations
   real, save    :: pt_es_alpha
   real, save    :: pt_smlpush
@@ -157,6 +158,8 @@ module Particles_data
   real, save    :: pt_dens_threshold
   real, save    :: pt_abs_threshold
   integer, save :: pt_num_tmcps_tstep
+  real, save    :: pt_line_center_ener, pt_line_width_ener,&
+                   pt_line_center_kappa
 
   logical, save :: pt_RadioEmission
   integer, save :: pt_num_rmcps_tstep

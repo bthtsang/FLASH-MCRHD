@@ -72,6 +72,18 @@ PARAMETER pt_is_mcp_grey BOOLEAN TRUE
 D pt_is_kt_opac         Whether to use the \propto T^2 opacity law from KT12.
 PARAMETER pt_is_kt_opac BOOLEAN FALSE
 
+D pt_single_line_opac        Whether to add a single line opacity
+PARAMETER pt_single_line_opac BOOLEAN FALSE
+
+D pt_line_center_ener        Line center energy (in eV)
+PARAMETER pt_line_center_ener    REAL 10.0
+
+D pt_line_width_ener         Std. dev. of line profile (in eV)
+PARAMETER pt_line_width_ener     REAL 1.0
+
+D pt_line_center_kappa       Line center opacity value (kappa_0, in cm2/g)
+PARAMETER pt_line_center_kappa   REAL 1.0
+
 D pt_grey_abs_opac        Constant gas absorption opacity for thermal rad.
 PARAMETER pt_grey_abs_opac    REAL 1.0
 

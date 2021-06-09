@@ -139,6 +139,12 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_abs_threshold", pt_abs_threshold)
   call RuntimeParameters_get ("pt_num_tmcps_tstep", pt_num_tmcps_tstep)
 
+  ! Line radiation transport
+  call RuntimeParameters_get ("pt_single_line_opac", pt_single_line_opac)
+  call RuntimeParameters_get ("pt_line_center_ener", pt_line_center_ener)
+  call RuntimeParameters_get ("pt_line_width_ener", pt_line_width_ener)
+  call RuntimeParameters_get ("pt_line_center_kappa", pt_line_center_kappa)
+
   ! Radioactive decay emission
   call RuntimeParameters_get ("pt_RadioEmission", pt_RadioEmission)
   call RuntimeParameters_get ("pt_num_rmcps_tstep", pt_num_rmcps_tstep)
