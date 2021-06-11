@@ -172,17 +172,17 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
   n_hat = v_mcp / clight
   v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  v_gas = v_gas / clight
 
   if (tolab) then
     v_gas = -v_gas
   end if
 
   ! Computing relativistic quantities
-  v2 = dot_product(v_gas, v_gas) 
-  beta2 = v2/clight/clight
+  beta2 = dot_product(v_gas, v_gas)
   vdd  = dot_product(v_gas, n_hat)
   gamm = 1.0/sqrt(1.0 - beta2)
-  dshift = gamm*(1.0 - vdd/clight)
+  dshift = gamm*(1.0 - vdd)
 
 end subroutine 
 
