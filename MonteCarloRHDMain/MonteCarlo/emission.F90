@@ -277,7 +277,8 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
         dE = 0.0d0
         if (pt_is_grey) then
-          call calc_abs_opac(cellID, solnVec, eps_dummy, ka)
+          ! grey case: 1.0 is dummy for dshift
+          call calc_abs_opac(cellID, solnVec, eps_dummy, 1.0, ka)
           ! ka here is already in co-moving frame
           dE = 4.0 * ka * sigma * (temp**4.0) * dV * dtNew
           kp = ka
