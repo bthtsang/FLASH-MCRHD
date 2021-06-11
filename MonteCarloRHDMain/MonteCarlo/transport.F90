@@ -239,9 +239,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         ! Opacities are evaluated in the comoving frame
         call calc_abs_opac(cellID, solnVec, &
-                particles(ENER_PART_PROP,i), k_a)
+                particles(ENER_PART_PROP,i), dshift, k_a)
         call calc_sca_opac(cellID, solnVec, &
-                particles(ENER_PART_PROP,i), k_s)
+                particles(ENER_PART_PROP,i), dshift, k_s)
         call get_fleck(cellID, solnVec, fleck)
         k_a_cmf = k_a
         k_s_cmf = k_s
@@ -545,13 +545,6 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
 
-            ! Get the updated cell if MCP is not moving out of block, or
-            ! if isoutside is false
-            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
-            call get_cellID(bndBox, deltaCell, newPos, new_cellID)
-
-            !print *, "newcell", new_cellID
-
             ! When veldp is on, LT may convert small -ve phi by += 2*pi,
             ! which is a side effect of LT's correct behavior.
             ! If using veldp, make sure the position after LT is the same
@@ -559,7 +552,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             ! calling outsideBoundBox with the LT-ed position will not work
             ! because the position is no longer in neghboring block and is not
             ! consistent with the neghdir values.
-            if ((gr_geometry == SPHERICAL) .and. (pt_is_veldp)) then
+            !if ((gr_geometry == SPHERICAL) .and. (pt_is_veldp)) then
+            if (pt_is_veldp) then
               ! The follow needs extra correction in case when phi = 2*pi + epsilon
               ! Skip the tedious fix for now.
 !              if ((pos_b4_LT(KAXIS) < 0.0) .and. (pos_af_LT(KAXIS) > 0.0)) then
@@ -567,8 +561,18 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 !newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 !              end if
               ! Enforce position invariant before and after LT
-              particles(POSZ_PART_PROP,i) = pos_b4_LT(KAXIS)
+              if (gr_geometry == SPHERICAL) then
+                particles(POSZ_PART_PROP,i) = pos_b4_LT(KAXIS)
+              else if (gr_geometry == CARTESIAN) then
+                particles(POSX_PART_PROP:POSZ_PART_PROP,i) = pos_b4_LT
+              end if
             end if
+
+            ! Get the updated cell if MCP is not moving out of block, or
+            ! if isoutside is false
+            ! Moved after the Lorentz-transformed position fix.
+            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            call get_cellID(bndBox, deltaCell, newPos, new_cellID)
 
             crossproc_tag = int(particles(TAG_PART_PROP,i))
 
