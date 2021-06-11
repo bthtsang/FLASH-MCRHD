@@ -3,7 +3,7 @@ module opacity
   implicit none
   contains
 
-subroutine calc_abs_opac(cellID, solnVec, energy, ka)
+subroutine calc_abs_opac(cellID, solnVec, energy, dshift, ka)
   use Particles_data, only : pt_is_grey, pt_grey_abs_opac, pt_dens_threshold,&
                              pt_is_kt_opac, ev2erg,&
                              pt_single_line_opac, pt_line_center_ener,&
@@ -17,7 +17,7 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
   ! Input/Output
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
-  real, intent(in) :: energy
+  real, intent(in) :: energy, dshift
   real, intent(out) :: ka
 
   ! aux variables
@@ -35,13 +35,12 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
       if (temp >= 150.0) temp_opac = 150.0
       ka = 0.10*(temp_opac/10.0)**2
     end if 
-    ka = ka * rho
 
   else
     if (pt_single_line_opac) then
       ka = pt_line_center_kappa
 
-      energy_eV = energy/ev2erg ! convert from erg to eV
+      energy_eV = energy/ev2erg*dshift ! convert from erg to eV
       expterm = 0.5*((energy_eV-pt_line_center_ener)/pt_line_width_ener)**2
       if (expterm <= 20.0) then
         ka = ka * exp(-expterm)
@@ -54,13 +53,13 @@ subroutine calc_abs_opac(cellID, solnVec, energy, ka)
     !call Driver_abortFlash("calc_abs_opac:&
     !                       non-grey emission not implemented yet!")
   end if
-
+  ka = ka * rho
   if (rho .lt. pt_dens_threshold) ka = 0.0d0
 
 end subroutine calc_abs_opac
 
 
-subroutine calc_sca_opac(cellID, solnVec, energy, ks)
+subroutine calc_sca_opac(cellID, solnVec, energy, dshift, ks)
   use Particles_data, only : pt_is_grey, pt_grey_sca_opac, pt_dens_threshold
   use Driver_interface,  ONLY : Driver_abortFlash
   implicit none
@@ -71,7 +70,7 @@ subroutine calc_sca_opac(cellID, solnVec, energy, ks)
   ! Input/Output
   integer, dimension(MDIM), intent(in) :: cellID
   real, pointer :: solnVec(:,:,:,:)
-  real, intent(in) :: energy
+  real, intent(in) :: energy, dshift
   real, intent(out) :: ks
 
   ! aux variables
@@ -86,8 +85,9 @@ subroutine calc_sca_opac(cellID, solnVec, energy, ks)
 
     if (rho .lt. pt_dens_threshold) ks = 0.0d0
   else
-    call Driver_abortFlash("calc_sca_opac:&
-                            non-grey emission not implemented yet!")
+    ks = 0.0
+!    call Driver_abortFlash("calc_sca_opac:&
+!                            non-grey emission not implemented yet!")
   end if
 
 end subroutine calc_sca_opac
