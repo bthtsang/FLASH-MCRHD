@@ -28,6 +28,7 @@ subroutine calc_pi_opac(cellID, solnVec, energy, kpi, nH, nH1)
   real :: hp, Ahp
 
   kpi = 0.0d0
+  nH = 1.0d0
   nH1 = 1.0d0
   if (.not. pt_is_photoionization) return 
 
