@@ -219,6 +219,9 @@ PARAMETER pt_temp_floor           REAL  0.0
 D pt_is_veldp             Whether to turn on velocity-dependent correction
 PARAMETER pt_is_veldp                BOOLEAN FALSE
 
+D pt_interp_vel_LT        Whether to interpolate gas velocity for Lorentz trans.
+PARAMETER pt_interp_vel_LT           BOOLEAN FALSE
+
 D pt_use_fromPos          Whether to use the Grid_getBlkIDFromPos
 PARAMETER pt_use_fromPos             BOOLEAN FALSE
 

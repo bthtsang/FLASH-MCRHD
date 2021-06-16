@@ -212,6 +212,7 @@ subroutine Particles_init ( restart)
 
   ! parameter for velocity-dependent, or special relativistic applications
   call RuntimeParameters_get ("pt_is_veldp", pt_is_veldp)
+  call RuntimeParameters_get ("pt_interp_vel_LT", pt_interp_vel_LT)
   call RuntimeParameters_get ("pt_is_mcp_grey", pt_is_mcp_grey)
   call RuntimeParameters_get ("pt_samp_mode", pt_samp_mode)
 

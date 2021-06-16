@@ -195,6 +195,7 @@ module Particles_data
   real, save    :: pt_temp_floor
 
   logical, save    :: pt_is_veldp
+  logical, save    :: pt_interp_vel_LT
   logical, save    :: pt_is_mcp_grey
 
   integer, save    :: pt_samp_mode
