@@ -209,9 +209,12 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_ThermalEmission,&
               pt_is_grey, pt_is_eff_scattering, pt_num_tmcps_tstep,&
-              pt_is_veldp, pt_marshak_eos, pt_samp_Tgas
+              pt_is_veldp, pt_marshak_eos, pt_samp_Tgas,&
+              pt_interp_vel_LT
   use Grid_interface, only : Grid_getBlkIndexLimits,&
-              Grid_getBlkBoundBox, Grid_getDeltas
+              Grid_getBlkBoundBox, Grid_getDeltas,&
+              Grid_getCellCoords
+  use Grid_data, only: gr_geometry
   use Simulation_data, only : R, sigma, a_rad
   use Eos_data, only : eos_singleSpeciesA
   use opacity, only : calc_abs_opac
@@ -220,6 +223,8 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
   use relativity, only : transform_comoving_to_lab
+  use spherical, only : get_cartesian_velocity
+  use transport, only : interp_gas_vel_at_mcp
 
   implicit none
 #include "Flash.h"
@@ -242,6 +247,14 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
   real :: dV, temp, rho, gamc, ka, kp, dE, dEMIE, c_V, beta, fn
   real, parameter :: eps_dummy = 1.0d-10
 
+  integer, parameter :: ycoordsize = NYB + 2*NGUARD
+  real, dimension(ycoordsize) :: ycoords
+  integer, parameter :: xcoordsize = NXB + 2*NGUARD
+  real, dimension(xcoordsize) :: xcoords
+  integer, parameter :: zcoordsize = NZB + 2*NGUARD
+  real, dimension(zcoordsize) :: zcoords
+
+  real, dimension(MDIM) :: v_gas, v_gas_cart, cell_coords
   real, dimension(MDIM) :: newxyz, newvel
   real :: weight_per_mcp, dE_per_mcp, dtNow, newenergy
   real, dimension(NPART_PROPS) :: newparticle
@@ -262,13 +275,41 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
   call Grid_getBlkBoundBox(blockID, bndBox)
   call Grid_getDeltas(blockID, deltaCell) 
 
+  ! Get cell coordinates for LT
+  call Grid_getCellCoords(IAXIS, blockID, CENTER, .TRUE.,&
+                          xcoords, xcoordsize)
+  ycoords = 1.0
+  zcoords = 1.0
+  if (NDIM > 1) then
+    call Grid_getCellCoords(JAXIS, blockID, CENTER, .TRUE.,&
+                            ycoords, ycoordsize)
+
+    if (NDIM > 2) then
+      call Grid_getCellCoords(KAXIS, blockID, CENTER, .TRUE.,&
+                              zcoords, zcoordsize)
+    end if
+  end if
+
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
 
         cellID = (/ i, j, k /)
 
-        CALL Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
+        v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
+                         cellID(JAXIS), cellID(KAXIS))
+
+        ! convert spherical velocity to Cartesian velocity
+        if (gr_geometry == SPHERICAL) then
+          cell_coords = (/ xcoords(cellID(IAXIS)),&
+                           ycoords(cellID(JAXIS)),&
+                           zcoords(cellID(KAXIS)) /)
+          call get_cartesian_velocity(cell_coords, v_gas,&
+                                      v_gas_cart)
+          v_gas = v_gas_cart
+        end if
+
+        call Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
 
         ! Obtaining grid info of current cell
         temp = solnVec(TEMP_VAR, i, j, k)
@@ -337,8 +378,21 @@ subroutine thermal_emission(blockID, solnVec, dtNew,&
 
             ! Convert to lab frame if velocity dependent is on
             if (pt_is_veldp) then
+              if (pt_interp_vel_LT) then
+                call interp_gas_vel_at_mcp(bndBox, deltaCell, newxyz,&
+                                           solnVec, v_gas)
+                cell_coords = newxyz  ! put cell location at MCP
+              end if
+
+              ! convert spherical velocity to Cartesian velocity
+              if (gr_geometry == SPHERICAL) then
+                call get_cartesian_velocity(cell_coords, v_gas,&
+                                            v_gas_cart)
+                v_gas = v_gas_cart
+              end if
+
               ! call some conversion function to convert
-              call transform_comoving_to_lab(cellID, solnVec,&
+              call transform_comoving_to_lab(v_gas,&
                             dtNew, newparticle, dshift) 
             end if
 
@@ -369,15 +423,19 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
            now_energy, now_vel, now_weight)
   use Particles_data, only : pt_maxnewnum, pt_RadioEmission,&
                              pt_num_rmcps_tstep, pt_is_veldp,&
-                             pt_samp_Tgas
+                             pt_samp_Tgas, pt_interp_vel_LT
   use Grid_interface, only : Grid_getBlkIndexLimits,&
-              Grid_getBlkBoundBox, Grid_getDeltas
+              Grid_getBlkBoundBox, Grid_getDeltas,&
+              Grid_getCellCoords
+  use Grid_data, only: gr_geometry
   use opacity, only : calc_abs_opac
   use Driver_interface, only : Driver_abortFlash
   use rhd, only : cellAddVar
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
   use relativity, only : transform_comoving_to_lab
+  use spherical, only : get_cartesian_velocity
+  use transport, only : interp_gas_vel_at_mcp
 
   implicit none
 #include "Flash.h"
@@ -405,6 +463,16 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
   real, dimension(NPART_PROPS) :: newparticle
   real :: dshift
 
+  integer, parameter :: ycoordsize = NYB + 2*NGUARD
+  real, dimension(ycoordsize) :: ycoords
+  integer, parameter :: xcoordsize = NXB + 2*NGUARD
+  real, dimension(xcoordsize) :: xcoords
+  integer, parameter :: zcoordsize = NZB + 2*NGUARD
+  real, dimension(zcoordsize) :: zcoords
+
+  real, dimension(MDIM) :: v_gas, v_gas_cart, cell_coords
+
+
   ! Initialization
   now_num = 0
   now_pos = 0.0d0
@@ -420,11 +488,39 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
   call Grid_getBlkBoundBox(blockID, bndBox)
   call Grid_getDeltas(blockID, deltaCell) 
 
+  ! Get cell coordinates for LT
+  call Grid_getCellCoords(IAXIS, blockID, CENTER, .TRUE.,&
+                          xcoords, xcoordsize)
+  ycoords = 1.0
+  zcoords = 1.0
+  if (NDIM > 1) then
+    call Grid_getCellCoords(JAXIS, blockID, CENTER, .TRUE.,&
+                            ycoords, ycoordsize)
+
+    if (NDIM > 2) then
+      call Grid_getCellCoords(KAXIS, blockID, CENTER, .TRUE.,&
+                              zcoords, zcoordsize)
+    end if
+  end if
+
   do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
     do j = blkLimits(LOW, JAXIS), blkLimits(HIGH, JAXIS)
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
 
         cellID = (/ i, j, k /)
+
+        v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
+                         cellID(JAXIS), cellID(KAXIS))
+
+        ! convert spherical velocity to Cartesian velocity
+        if (gr_geometry == SPHERICAL) then
+          cell_coords = (/ xcoords(cellID(IAXIS)),&
+                           ycoords(cellID(JAXIS)),&
+                           zcoords(cellID(KAXIS)) /)
+          call get_cartesian_velocity(cell_coords, v_gas,&
+                                      v_gas_cart)
+          v_gas = v_gas_cart
+        end if
 
         CALL Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
 
@@ -499,9 +595,26 @@ subroutine radioactive_emission(blockID, solnVec, dtNew,&
 
             ! Convert to lab frame if velocity dependent is on
             if (pt_is_veldp) then
+              if (pt_interp_vel_LT) then
+                call interp_gas_vel_at_mcp(bndBox, deltaCell, newxyz,&
+                                           solnVec, v_gas)
+                cell_coords = newxyz  ! put cell location at MCP
+              end if
+
+              ! convert spherical velocity to Cartesian velocity
+              if (gr_geometry == SPHERICAL) then
+                call get_cartesian_velocity(cell_coords, v_gas,&
+                                            v_gas_cart)
+                v_gas = v_gas_cart
+              end if
+
               ! call some conversion function to convert
-              call transform_comoving_to_lab(cellID, solnVec,&
-                            dtNew, newparticle, dshift) 
+              call transform_comoving_to_lab(v_gas,&
+                            dtNew, newparticle, dshift)
+
+              ! call some conversion function to convert
+!              call transform_comoving_to_lab(cellID, solnVec,&
+!                            dtNew, newparticle, dshift) 
             end if
 
 
@@ -869,8 +982,10 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           end if
           ! Impose the face value along FaceAxis
           newxyz(jj) = bndBox(ii, jj)
-          if (ii .EQ. HIGH) newxyz(jj) = (1.0d0 - pt_smlpush)*newxyz(jj)
-          if (ii .EQ. LOW) newxyz(jj) = (1.0d0 + pt_smlpush)*newxyz(jj)
+          !if (ii .EQ. HIGH) newxyz(jj) = (1.0d0 - pt_smlpush)*newxyz(jj)
+          !if (ii .EQ. LOW) newxyz(jj) = (1.0d0 + pt_smlpush)*newxyz(jj)
+          if (ii .EQ. HIGH) newxyz(jj) = newxyz(jj) - pt_smlpush*deltaCell(jj)
+          if (ii .EQ. LOW) newxyz(jj)  = newxyz(jj) + pt_smlpush*deltaCell(jj)
 
           ! Sampling MCP's velocity
           if (pt_is_radial_face_vel) then

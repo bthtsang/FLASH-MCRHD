@@ -4,36 +4,34 @@ module relativity
   contains
 
 ! Higher level subroutine to apply Lorentz transformation
-subroutine transform_lab_to_comoving(cellID, solnVec, dt, particle, dshift)
+subroutine transform_lab_to_comoving(v_gas, dt, particle, dshift)
 
   implicit none
 #include "constants.h"
 #include "Flash.h"
 
-  integer, dimension(MDIM), intent(in) :: cellID
-  real, pointer :: solnVec(:,:,:,:)
+  real, dimension(MDIM), intent(in) :: v_gas
   real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   real, intent(out) :: dshift
 
-  call lorentz_transformation(cellID, solnVec, .false., dt, particle, dshift)
+  call lorentz_transformation(v_gas, .false., dt, particle, dshift)
 
 end subroutine transform_lab_to_comoving
 
 
 ! Higher level subroutine to apply Lorentz transformation
-subroutine transform_comoving_to_lab(cellID, solnVec, dt, particle, dshift)
+subroutine transform_comoving_to_lab(v_gas, dt, particle, dshift)
 
   implicit none
 #include "constants.h"
 #include "Flash.h"
-  integer, dimension(MDIM), intent(in) :: cellID
-  real, pointer :: solnVec(:,:,:,:)
+  real, dimension(MDIM), intent(in) :: v_gas
   real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
   real, intent(out) :: dshift
 
-  call lorentz_transformation(cellID, solnVec, .true., dt, particle, dshift)
+  call lorentz_transformation(v_gas, .true., dt, particle, dshift)
 
 end subroutine transform_comoving_to_lab
 
@@ -44,7 +42,7 @@ end subroutine transform_comoving_to_lab
 ! frequency (ENER_PART_PROP).
 ! The weight (number of photons) should conserve under
 ! the transformation (NUMP_PART_PROP).
-subroutine lorentz_transformation(cellID, solnVec, tolab, dt, particle, dshift)
+subroutine lorentz_transformation(vg, tolab, dt, particle, dshift)
   use Driver_interface, only : Driver_abortFlash
   use Simulation_data, only : clight
   use spherical, only : get_cartesian_position, get_spherical_position
@@ -54,8 +52,7 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, dt, particle, dshift)
 #include "Flash.h"
 
   ! Input/output
-  integer, dimension(MDIM), intent(in) :: cellID
-  real, pointer :: solnVec(:,:,:,:)
+  real, dimension(MDIM), intent(in) :: vg
   logical, intent(in) :: tolab
   real, intent(in) :: dt
   real, dimension(NPART_PROPS), intent(inout) :: particle
@@ -72,11 +69,11 @@ subroutine lorentz_transformation(cellID, solnVec, tolab, dt, particle, dshift)
 
   ! Extract MCP and gas (cell) velocity
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
-  v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  !v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
 
   ! velocities in unit of c
   v_mcp = v_mcp / clight
-  v_gas = v_gas / clight
+  v_gas = vg / clight
 
   ! Extract MCP's position and time
   ! t = 0 corresponds to the beginning of timestep
@@ -152,15 +149,14 @@ end subroutine lorentz_transformation
 ! Subroutine to compute the epsilon/epsilon_0 value
 ! without modifying the particle's attributes. 
 ! This is mostly meant for opacity calculation
-subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
+subroutine compute_dshift(vg, tolab, particle, dshift)
   use Simulation_data, only : clight
 
   implicit none
 #include "Flash.h"
 
   ! Input/output
-  integer, dimension(MDIM), intent(in) :: cellID
-  real, pointer :: solnVec(:,:,:,:)
+  real, dimension(MDIM), intent(in) :: vg
   logical, intent(in) :: tolab
   real, dimension(NPART_PROPS), intent(in) :: particle
   real, intent(out) :: dshift
@@ -171,8 +167,8 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
 
   v_mcp = particle(VELX_PART_PROP:VELZ_PART_PROP)
   n_hat = v_mcp / clight
-  v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
-  v_gas = v_gas / clight
+  !v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  v_gas = vg / clight
 
   if (tolab) then
     v_gas = -v_gas
@@ -184,27 +180,28 @@ subroutine compute_dshift(cellID, solnVec, tolab, particle, dshift)
   gamm = 1.0/sqrt(1.0 - beta2)
   dshift = gamm*(1.0 - vdd)
 
-end subroutine 
+end subroutine compute_dshift
 
 ! Subroutine to compute local cells' gamma factors
-subroutine compute_gamma(cellID, solnVec, gamm_fac)
+subroutine compute_gamma(vg, gamm_fac)
   use Simulation_data, only : clight
 
   implicit none
 #include "Flash.h"
 
   ! Input/output
-  integer, dimension(MDIM), intent(in) :: cellID
-  real, pointer :: solnVec(:,:,:,:)
+  !integer, dimension(MDIM), intent(in) :: cellID
+  !real, pointer :: solnVec(:,:,:,:)
+  real, dimension(MDIM), intent(in) :: vg
   real, intent(out) :: gamm_fac
 
   ! aux variables
   real, dimension(MDIM) :: v_gas
   real :: beta2
 
-  v_gas = solnVec(VELX_VAR:VELZ_VAR,&
-            cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
-  v_gas = v_gas / clight
+  !v_gas = solnVec(VELX_VAR:VELZ_VAR,&
+  !          cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+  v_gas = vg / clight
 
   beta2 = dot_product(v_gas, v_gas)
   gamm_fac = 1.0/sqrt(1.0 - beta2)

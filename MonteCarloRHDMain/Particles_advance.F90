@@ -102,7 +102,7 @@ subroutine Particles_advance (dtOld,dtNew)
        pt_maxPerProc,particlesPerBlk,BLK_PART_PROP)
 #endif
 
-  if(pt_keepLostParticles) then
+  if ((pt_keepLostParticles) .and. (pt_numLocal > 0)) then
      pfor=pt_numLocal
      do while(particles(BLK_PART_PROP,pt_numLocal)==LOST)
         pt_numLocal=pt_numLocal-1
@@ -208,9 +208,12 @@ subroutine Particles_advance (dtOld,dtNew)
 #endif
  
   if(pt_keepLostParticles) then
+  !if ((pt_keepLostParticles) .and. (pt_numLocal > 0)) then
+   if (pt_numLocal > 0) then
      pfor=pt_numLocal
      do while(particles(BLK_PART_PROP,pt_numLocal)==LOST)
         pt_numLocal=pt_numLocal-1
+        if (pt_numLocal == 0) exit
      end do
      lostNow=pfor-pt_numLocal
      pt_numLost=pt_numLost+lostNow
@@ -219,6 +222,7 @@ subroutine Particles_advance (dtOld,dtNew)
      do i = 1,lostNow
         particles(:,pbak+i)=particles(:,pt_numLocal+i)
      end do
+   end if
 
      call MPI_AllReduce(pt_numLost, numLost_global, 1, MPI_INTEGER,&
                         MPI_SUM, amr_mpi_meshComm, ierr)

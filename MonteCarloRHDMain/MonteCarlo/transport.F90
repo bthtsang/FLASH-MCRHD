@@ -26,14 +26,14 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                              pt_PION_ESCAT_ID,&
                              pt_quadrant_I, pt_quadrant_II,&
                              pt_quadrant_III, pt_quadrant_IV,&
-                             pt_is_veldp,&
+                             pt_is_veldp, pt_interp_vel_LT,&
                              pt_is_photoionization, pt_is_es_photoionization,&
                              pt_is_caseB, pt_is_veldp,&
                              pt_keepLostParticles
   use Paramesh_comm_data, only : amr_mpi_meshComm
   use Driver_interface, only : Driver_abortFlash
   use spherical, only : get_cartesian_position, get_spherical_velocity,&
-                        get_quadrant
+                        get_cartesian_velocity, get_quadrant
   use opacity, only : calc_abs_opac, calc_sca_opac, get_fleck
   use scattering, only : scatter_mcp
   use ionization, only : calc_pi_opac, deposit_ionizing_radiation,&
@@ -79,6 +79,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real, dimension(xcoordsize) :: xcoords
   integer, parameter :: zcoordsize = NZB + 2*NGUARD
   real, dimension(zcoordsize) :: zcoords
+  real, dimension(MDIM) :: cell_coords
 
   real :: dt
   real, pointer, dimension(:,:,:,:) :: solnVec
@@ -101,6 +102,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   logical :: is_crossproc
 
   real :: dshift
+  real, dimension(MDIM) :: v_gas, v_gas_cart
 
   ! Debug
   real, dimension(MDIM) :: currentVel, currentCartPos
@@ -210,6 +212,8 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         call Grid_getCellCoords(IAXIS, currentBlk, CENTER, .TRUE.,&
                                 xcoords, xcoordsize)
 
+        ycoords = 1.0
+        zcoords = 1.0
         if (NDIM > 1) then
           call Grid_getCellCoords(JAXIS, currentBlk, CENTER, .TRUE.,&
                                   ycoords, ycoordsize)
@@ -222,10 +226,37 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         call get_cellID(bndBox, deltaCell, currentPos, cellID)
         n_it_current = n_it_current + 1
-        
+
         call Grid_getSingleCellVol(currentBlk, EXTERIOR, cellID, dvol)
 
         call Grid_getBlkPtr(currentBlk, solnVec, CENTER)
+
+
+        ! gather current cell's gas velocity
+        v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
+                         cellID(JAXIS), cellID(KAXIS))
+        cell_coords = (/ xcoords(cellID(IAXIS)),&
+                         ycoords(cellID(JAXIS)),&
+                         zcoords(cellID(KAXIS)) /)
+
+        ! With bndBox, deltaCell, and cellID, one can implement
+        ! a generic interpolation scheme for getting v_gas at the 
+        ! particle location.
+        ! inputs: bndBox, deltaCell, particle's pos
+        ! output: v_gas
+        if (pt_interp_vel_LT) then
+          call interp_gas_vel_at_mcp(bndBox, deltaCell, currentPos,&
+                                     solnVec, v_gas)
+          cell_coords = currentPos  ! put cell location at MCP
+        end if
+
+        ! convert spherical velocity to Cartesian velocity
+        if (gr_geometry == SPHERICAL) then
+          call get_cartesian_velocity(cell_coords, v_gas,&
+                                      v_gas_cart)
+          v_gas = v_gas_cart
+        end if
+
 
         ! Compute the dshift term for opacity calculation, 
         ! the particles array is not modified
@@ -233,7 +264,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         ! coordinate systems.
         dshift = 1.0d0
         if (pt_is_veldp) then
-          call compute_dshift(cellID, solnVec, .false.,&
+          call compute_dshift(v_gas, .false.,&
                               particles(:,i), dshift)
         end if
 
@@ -339,7 +370,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             !print *, "on_hat", i, on_hat
             !print *, "nn_hat", i, nn_hat
             !print *, "******************"
-            call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
+            call deposit_energy_momentum(solnVec, cellID, v_gas, particles(:,i),&
                                          mcp_fate, dt, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
@@ -366,7 +397,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
           case (pt_SCAT_ID:pt_PION_ESCAT_ID) ! Physical and effective scattering
             ! advance to scattering location
             call advance_mcp(particles(:, i), min_time)
-            call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
+            call deposit_energy_momentum(solnVec, cellID, v_gas, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
@@ -374,10 +405,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                          fleckp, k_ion, N_H1, dvol,&
                                          is_empty_cell_event)
             if (mcp_fate == pt_SCAT_ID) then
-              call scatter_mcp(solnVec, cellID, dtNew, particles(:,i),&
+              call scatter_mcp(solnVec, cellID, v_gas, dtNew, particles(:,i),&
                                pt_is_scat_elastic, pt_is_scat_iso)
             else if (mcp_fate == pt_ESCAT_ID) then
-              call scatter_mcp(solnVec, cellID, dtNew, particles(:,i),&
+              call scatter_mcp(solnVec, cellID, v_gas, dtNew, particles(:,i),&
                                pt_is_escat_elastic, pt_is_escat_iso)
             else if (mcp_fate == pt_PION_ESCAT_ID) then
               call eff_scatter_ionizing_mcp(solnVec, cellID, particles(:,i),&
@@ -459,7 +490,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
           case (pt_ABS_ID) 
             ! advance MCP to absorption location
             call advance_mcp(particles(:,i), min_time)
-            call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
+            call deposit_energy_momentum(solnVec, cellID, v_gas, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             call deposit_ionizing_radiation(solnVec, cellID, particles(:,i),&
@@ -534,7 +565,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             vel_b4_LT = particles(VELX_PART_PROP:VELZ_PART_PROP, i)
             trem_b4_LT = particles(TREM_PART_PROP, i)
 
-            call deposit_energy_momentum(solnVec, cellID, particles(:,i),&
+            call deposit_energy_momentum(solnVec, cellID, v_gas, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
             pos_af_LT = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
@@ -1160,6 +1191,54 @@ subroutine get_cellID(bndBox, deltaCell, pos, cellID)
   cellID = (/ ip, jp, kp /)
 
 end subroutine get_cellID
+
+! subroutine to compute positional offsets
+subroutine get_pos_offsets(bndBox, deltaCell, pos, cellID, h)
+
+  implicit none
+#include "Flash.h"
+#include "constants.h"
+
+  ! Input/Output
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
+  real, dimension(MDIM), intent(in) :: pos, deltaCell
+  integer, dimension(MDIM), intent(out) :: cellID
+  real, dimension(MDIM), intent(out) :: h
+
+  ! aux variables
+  real :: dx_block_i, dy_block_i, dz_block_i, xp, yp, zp
+  integer :: ip, jp, kp
+
+  dx_block_i = 1.0/deltaCell(1)
+  xp = (pos(IAXIS) - bndBox(LOW,IAXIS)) * dx_block_i  !! offset of particle from block edge
+  ip = floor(xp) + 1 + NGUARD       !! actual cell index (including guards)
+  h(IAXIS) = modulo(xp,1.) - 5.e-1        !! remainder of ??
+
+! y-coord
+  if (NDIM >= 2) then
+    dy_block_i = 1.0/deltaCell(2)
+    yp = (pos(JAXIS) - bndBox(LOW,JAXIS)) * dy_block_i
+    jp = floor(yp) + 1 + NGUARD
+    h(JAXIS) = modulo(yp,1.) - 5.e-1
+  else
+    jp = 1
+    h(JAXIS) = 0.
+  endif
+
+! z-coord
+  if (NDIM == 3) then
+    dz_block_i = 1.0/deltaCell(3)
+    zp = (pos(KAXIS) - bndBox(LOW,KAXIS)) * dz_block_i
+    kp = floor(zp) + 1 + NGUARD
+    h(KAXIS) = modulo(zp,1.) - 5.e-1
+  else
+    kp = 1
+    h(KAXIS) = 0.
+  endif
+
+  cellID = (/ ip, jp, kp /)
+
+end subroutine get_pos_offsets
 
 subroutine calc_distance_to_collision(k_opac, d_coll)
 
@@ -2428,7 +2507,7 @@ end subroutine distance_to_closest_wall
 !end subroutine print_mcp_history
 
 
-subroutine deposit_energy_momentum(solnVec, cellID, particle,&
+subroutine deposit_energy_momentum(solnVec, cellID, v_gas, particle,&
                                    mcp_fate, dt, dtNew,&
                                    fleck, k_a, k_s, dvol)
   use Grid_data, only : gr_geometry
@@ -2449,6 +2528,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   ! Input/output
   real, pointer :: solnVec(:,:,:,:)
   integer, dimension(MDIM), intent(in) :: cellID
+  real, dimension(MDIM), intent(in) :: v_gas
   real, dimension(NPART_PROPS), intent(inout) :: particle
   integer, intent(in) :: mcp_fate
   real, intent(in) :: dt, dtNew, fleck, k_a, k_s, dvol
@@ -2474,7 +2554,7 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
 
   dshift = 1.0d0
   if (pt_is_veldp) then 
-    call transform_lab_to_comoving(cellID, solnVec, dtNew, particle, dshift)
+    call transform_lab_to_comoving(v_gas, dtNew, particle, dshift)
   end if
 
   old_weight  = particle(NUMP_PART_PROP)  ! frame invariant
@@ -2603,10 +2683,162 @@ subroutine deposit_energy_momentum(solnVec, cellID, particle,&
   end if
 
   if (pt_is_veldp) then 
-    call transform_comoving_to_lab(cellID, solnVec, dtNew, particle, dshift)
+    call transform_comoving_to_lab(v_gas, dtNew, particle, dshift)
   end if
 
 end subroutine deposit_energy_momentum
+
+! subroutine to compute weight vectors given positional offset.
+! copied and simplified from pt_assignWeights
+subroutine assignWeights(h, wt)
+
+#include "constants.h"
+  implicit none
+  real,dimension(MDIM), intent(IN) :: h
+  real,dimension(LEFT_EDGE:RIGHT_EDGE,&
+                 LEFT_EDGE:RIGHT_EDGE,&
+                 LEFT_EDGE:RIGHT_EDGE), intent(out) :: wt
+
+  ! aux variables
+  real,dimension(LEFT_EDGE:RIGHT_EDGE) :: wx,wy,wz
+  integer :: iface, jface, kface
+
+  if (h(IAXIS)<0.) then
+     wx(CENTER) = (1.+h(IAXIS))
+     wx(LEFT_EDGE) =-h(IAXIS)
+     wx(RIGHT_EDGE) = 0.
+  else
+     wx(CENTER) = (1.-h(IAXIS))
+     wx(LEFT_EDGE) = 0.
+     wx(RIGHT_EDGE) = h(IAXIS)
+  end if
+
+  if (h(JAXIS)<0.) then
+     wy(CENTER) = (1.+h(JAXIS))
+     wy(LEFT_EDGE) =-h(JAXIS)
+     wy(RIGHT_EDGE) = 0.
+  else
+     wy(CENTER) = (1.-h(JAXIS))
+     wy(LEFT_EDGE) = 0.
+     wy(RIGHT_EDGE) = h(JAXIS)
+  end if
+
+  if (h(KAXIS)<0.) then
+     wz(CENTER) = (1.+h(KAXIS))
+     wz(LEFT_EDGE) =-h(KAXIS)
+     wz(RIGHT_EDGE) = 0.
+  else
+     wz(CENTER) = (1.-h(KAXIS))
+     wz(LEFT_EDGE) = 0.
+     wz(RIGHT_EDGE) = h(KAXIS)
+  end if
+
+  do kface=LEFT_EDGE,RIGHT_EDGE
+     do jface=LEFT_EDGE,RIGHT_EDGE
+        do iface=LEFT_EDGE,RIGHT_EDGE
+           wt(iface,jface,kface)=wx(iface)*wy(jface)*wz(kface)
+        end do
+     end do
+  end do
+
+end subroutine assignWeights
+
+! subroutine to interpolate grid variables
+subroutine interpolate_grid_var(ivar, solnVec, cellID, wt, avg_var)
+
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  integer, intent(in) :: ivar
+  real, pointer, dimension(:,:,:,:) :: solnVec
+  integer, dimension(MDIM), intent(in) :: cellID
+  real, dimension(LEFT_EDGE:RIGHT_EDGE,&
+                  LEFT_EDGE:RIGHT_EDGE,&
+                  LEFT_EDGE:RIGHT_EDGE), intent(in) :: wt
+  real, intent(out) :: avg_var
+
+  ! aux variables
+  integer :: ip, jp, kp
+  real :: avg_val
+  integer, parameter :: L=LEFT_EDGE, C=CENTER, R=RIGHT_EDGE
+
+  ip = cellID(IAXIS)
+  jp = cellID(JAXIS)
+  kp = cellID(KAXIS)
+  avg_val = 0.0 ! initialize
+
+  avg_val = solnVec(ivar,ip  ,jp  ,kp  ) * wt(C,C,C) +&! center
+            solnVec(ivar,ip+1,jp  ,kp  ) * wt(R,C,C) +&! right
+            solnVec(ivar,ip-1,jp  ,kp  ) * wt(L,C,C)   ! left  
+
+  if (NDIM >= 2) then
+     avg_val = avg_val +&
+               solnVec(ivar,ip-1,jp-1,kp  ) * wt(L,L,C)  + &
+               solnVec(ivar,ip  ,jp-1,kp  ) * wt(C,L,C)  + &
+               solnVec(ivar,ip+1,jp-1,kp  ) * wt(R,L,C)  + &
+               solnVec(ivar,ip+1,jp+1,kp  ) * wt(R,R,C)  + &
+               solnVec(ivar,ip  ,jp+1,kp  ) * wt(C,R,C)  + &
+               solnVec(ivar,ip-1,jp+1,kp  ) * wt(L,R,C)
+  endif
+
+  if (NDIM == 3) then
+     avg_val = avg_val + &
+               solnVec(ivar,ip  ,jp  ,kp-1) * wt(C,C,L)  + &
+               solnVec(ivar,ip-1,jp  ,kp-1) * wt(L,C,L)  + &
+               solnVec(ivar,ip-1,jp-1,kp-1) * wt(L,L,L)  + &
+               solnVec(ivar,ip  ,jp-1,kp-1) * wt(C,L,L)  + &
+               solnVec(ivar,ip+1,jp-1,kp-1) * wt(R,L,L)  + &
+               solnVec(ivar,ip+1,jp  ,kp-1) * wt(R,C,L)  + &
+               solnVec(ivar,ip+1,jp+1,kp-1) * wt(R,R,L)  + &
+               solnVec(ivar,ip  ,jp+1,kp-1) * wt(C,R,L)  + &
+               solnVec(ivar,ip-1,jp+1,kp-1) * wt(L,R,L)  + &
+
+               solnVec(ivar,ip  ,jp  ,kp+1) * wt(C,C,R)  + &
+               solnVec(ivar,ip-1,jp  ,kp+1) * wt(L,C,R)  + &
+               solnVec(ivar,ip-1,jp-1,kp+1) * wt(L,L,R)  + &
+               solnVec(ivar,ip  ,jp-1,kp+1) * wt(C,L,R)  + &
+               solnVec(ivar,ip+1,jp-1,kp+1) * wt(R,L,R)  + &
+               solnVec(ivar,ip+1,jp  ,kp+1) * wt(R,C,R)  + &
+               solnVec(ivar,ip+1,jp+1,kp+1) * wt(R,R,R)  + &
+               solnVec(ivar,ip  ,jp+1,kp+1) * wt(C,R,R)  + &
+               solnVec(ivar,ip-1,jp+1,kp+1) * wt(L,R,R)
+  endif
+
+  avg_var = avg_val
+
+end subroutine interpolate_grid_var
+
+! master subroutine to interpolate gas velocity at mcp location
+subroutine interp_gas_vel_at_mcp(bndBox, deltaCell, mcp_pos,&
+                                 solnVec, vg)
+#include "Flash.h"
+#include "constants.h"
+  implicit none
+
+  ! inputs/outputs
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
+  real, dimension(MDIM), intent(in)  :: deltaCell
+  real, dimension(MDIM), intent(in)  :: mcp_pos
+  real, pointer, dimension(:,:,:,:)  :: solnVec
+  real, dimension(MDIM), intent(out) :: vg
+
+  ! aux variables
+  integer, dimension(MDIM) :: cellID
+  real, dimension(MDIM) :: h
+  real,dimension(LEFT_EDGE:RIGHT_EDGE,&
+                 LEFT_EDGE:RIGHT_EDGE,&
+                 LEFT_EDGE:RIGHT_EDGE) :: wt
+
+  call get_pos_offsets(bndBox, deltaCell, mcp_pos, cellID, h)
+
+  call assignWeights(h, wt)
+
+  call interpolate_grid_var(VELX_VAR, solnVec, cellID, wt, vg(IAXIS))
+  call interpolate_grid_var(VELY_VAR, solnVec, cellID, wt, vg(JAXIS))
+  call interpolate_grid_var(VELZ_VAR, solnVec, cellID, wt, vg(KAXIS))
+
+end subroutine interp_gas_vel_at_mcp
 
 
 ! Support subroutine for showing a progress bar

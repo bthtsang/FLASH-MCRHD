@@ -63,8 +63,10 @@
 subroutine pt_initPositions (blockID,success)
   use Particles_data, only : pt_numLocal, pt_initradfield_num, pt_is_veldp,&
                              pt_maxPerProc, particles, pt_meshMe,&
-                             pt_indexList, pt_indexCount, pt_samp_Tgas
+                             pt_indexList, pt_indexCount, pt_samp_Tgas,&
+                             pt_interp_vel_LT
   use pt_interface, only :  pt_updateTypeDS
+  use Grid_data, only : gr_geometry
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
                              Grid_getDeltas, Grid_getSingleCellVol,&
                              Grid_getBlkPtr, Grid_releaseBlkPtr,&
@@ -74,6 +76,8 @@ subroutine pt_initPositions (blockID,success)
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
   use relativity, only : compute_gamma, transform_comoving_to_lab
+  use transport, only : interp_gas_vel_at_mcp
+  use spherical, only : get_cartesian_velocity
   use Driver_interface, only : Driver_abortFlash
 
   implicit none
@@ -100,6 +104,16 @@ subroutine pt_initPositions (blockID,success)
   real :: newenergy, dshift
   real :: gamm_fac, dV_0
 
+  ! cell coordinates for vel interpolation
+  integer, parameter :: ycoordsize = NYB + 2*NGUARD
+  real, dimension(ycoordsize) :: ycoords
+  integer, parameter :: xcoordsize = NXB + 2*NGUARD
+  real, dimension(xcoordsize) :: xcoords
+  integer, parameter :: zcoordsize = NZB + 2*NGUARD
+  real, dimension(zcoordsize) :: zcoords
+  real, dimension(MDIM) :: v_gas, v_gas_cart
+  real, dimension(MDIM) :: cell_coords
+
   ! Commenting out stub code
   !success = .true. ! DEV: returns true because this stub creates no particles,
                    ! therefore all of those zero particles were created successfully
@@ -122,6 +136,19 @@ subroutine pt_initPositions (blockID,success)
   ! Get the grid geometry of this block
   call Grid_getBlkBoundBox(blockID,bndBox)
   call Grid_getDeltas(blockID, deltaCell)
+  call Grid_getCellCoords(IAXIS, blockID, CENTER, .TRUE.,&
+                          xcoords, xcoordsize)
+  ycoords = 1.0
+  zcoords = 1.0
+  if (NDIM > 1) then
+    call Grid_getCellCoords(JAXIS, blockID, CENTER, .TRUE.,&
+                            ycoords, ycoordsize)
+
+    if (NDIM > 2) then
+      call Grid_getCellCoords(KAXIS, blockID, CENTER, .TRUE.,&
+                              zcoords, zcoordsize)
+    end if
+  end if
 
   call Grid_getBlkPtr(blockID, solnVec, CENTER)
 
@@ -136,11 +163,25 @@ subroutine pt_initPositions (blockID,success)
       do i = blkLimits(LOW,IAXIS), blkLimits(HIGH, IAXIS)
         cellID(1) = i
 
+        ! get gas velocity in current cell for gamma calc.
+        v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
+                         cellID(JAXIS), cellID(KAXIS))
+
+        ! convert spherical velocity to Cartesian velocity
+        if (gr_geometry == SPHERICAL) then
+          cell_coords = (/ xcoords(cellID(IAXIS)),&
+                           ycoords(cellID(JAXIS)),&
+                           zcoords(cellID(KAXIS)) /)
+          call get_cartesian_velocity(cell_coords, v_gas,&
+                                      v_gas_cart)
+          v_gas = v_gas_cart
+        end if
+
         call Grid_getSingleCellVol(blockID, EXTERIOR, cellID, dV)
         dV_0 = dV  ! default the same
         ! convert lab-frame volume to CMF volume
         if (pt_is_veldp) then
-          call compute_gamma(cellID, solnVec, gamm_fac)
+          call compute_gamma(v_gas, gamm_fac)
           dV_0 = gamm_fac * dV
         end if
 
@@ -184,8 +225,21 @@ subroutine pt_initPositions (blockID,success)
 
           ! transform back to lab frame if needed
           if (pt_is_veldp) then
+            if (pt_interp_vel_LT) then
+              call interp_gas_vel_at_mcp(bndBox, deltaCell, newxyz,&
+                                         solnVec, v_gas)
+              cell_coords = newxyz  ! put cell location at MCP
+            end if
+
+            ! convert spherical velocity to Cartesian velocity
+            if (gr_geometry == SPHERICAL) then
+              call get_cartesian_velocity(cell_coords, v_gas,&
+                                          v_gas_cart)
+              v_gas = v_gas_cart
+            end if
+
             ! call some conversion function to convert
-            call transform_comoving_to_lab(cellID, solnVec,&
+            call transform_comoving_to_lab(v_gas,&
                           -1.0, particles(:,p), dshift)  ! dtNew = -1 as dummy
 
             ! check whether the mcp is still contained in current block

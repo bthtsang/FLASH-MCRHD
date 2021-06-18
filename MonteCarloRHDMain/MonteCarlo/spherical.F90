@@ -163,4 +163,53 @@ subroutine get_spherical_velocity(pos, vel, sph_vel)
 
 end subroutine get_spherical_velocity
 
+! Helper subroutine to convert (vr, vt, vp) into (vx, vy, vz)
+subroutine get_cartesian_velocity(pos, vel, cart_vel)
+
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/output
+  real, dimension(MDIM), intent(in) :: pos, vel
+  real, dimension(MDIM), intent(out) :: cart_vel
+
+  ! aux variables
+  real :: theta, phi
+  real :: sin_theta, cos_theta, sin_phi, cos_phi
+  real, dimension(MDIM) :: r_hat, theta_hat, phi_hat
+  real :: vr, vt, vp
+
+
+  if (NDIM <= 3) then
+    theta = pos(JAXIS)
+    phi   = pos(KAXIS)
+
+    sin_theta = sin(theta)
+    cos_theta = cos(theta)
+    sin_phi   = sin(phi)
+    cos_phi   = cos(phi)
+
+    r_hat = (/ sin_theta*cos_phi,&
+               sin_theta*sin_phi,&
+               cos_theta /)
+
+    theta_hat = (/ cos_theta*cos_phi,&
+                   cos_theta*sin_phi,&
+                   -sin_theta /)
+    phi_hat   = (/ -sin_phi,&
+                    cos_phi,&
+                    0.0d0 /)
+
+    ! add the three components
+    cart_vel = vel(IAXIS)*r_hat
+    cart_vel = cart_vel + vel(JAXIS)*theta_hat
+    cart_vel = cart_vel + vel(KAXIS)*phi_hat
+  else
+    call Driver_abortFlash("get_spherical_velocity: &
+            1D/2D applications not implemented yet.")
+  end if
+
+end subroutine get_cartesian_velocity
+
 end module spherical
