@@ -1,0 +1,29 @@
+
+### Config file for generic radiative equilibrium test
+#
+REQUIRES Driver
+REQUIRES physics/Hydro/HydroMain/unsplit/Hydro_Unsplit
+REQUIRES Grid/GridMain/paramesh/paramesh4/Paramesh4dev
+
+### Importing the Monte Carlo RHD module
+REQUIRES physics/MonteCarloRHD/MonteCarloRHDMain/NonIonizingRad
+
+
+
+
+### Simulation specific runtime parameters
+D sim_pAmbient       Initial ambient pressure
+PARAMETER sim_pAmbient     REAL    1.E-13
+
+D sim_rhoAmbient     Initial ambient density
+PARAMETER sim_rhoAmbient   REAL    7.78e-10
+
+D sim_tempAmbient    Intial ambient temperature
+PARAMETER sim_tempAmbient  REAL    10.0
+
+D sim_bulkvelaxis    Direction for the bulk velocity
+PARAMETER sim_bulkvelaxis  INTEGER 1
+
+D sim_bulkvelval     Value of the bulk velocity
+PARAMETER sim_bulkvelval  REAL  1.0e6
+
