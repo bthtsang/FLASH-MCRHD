@@ -23,11 +23,15 @@ node{
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadDiff -auto -3d -maxblocks=200 -debug -objdir=cartraddiff'
             dir('cartraddiff'){
-                sh 'cp /home/jenkins/Makefile.h .'
-                sh 'make -j'
-                sh 'mpirun -np 8 ./flash4'
-                sh 'python3 urad_from_mcps.py cartimc_1M_hdf5_chk_ 1 3'
-                archiveArtifacts artifacts: 'FLASH4/cartraddiff/mcp_urad.pdf'
+	        stage('Build')
+                    sh 'cp /home/jenkins/Makefile.h .'
+                    sh 'make -j'
+		}
+		stage('Test'){
+                    sh 'mpirun -np 8 ./flash4'
+                    sh 'python3 urad_from_mcps.py cartimc_1M_hdf5_chk_ 1 3'
+                    archiveArtifacts artifacts: 'FLASH4/cartraddiff/mcp_urad.pdf'
+		}
             }
         }
     }
