@@ -6,6 +6,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+MAXERROR = 0.05
+
 matplotlib.rcParams['font.size'] = 18
 matplotlib.rcParams['font.family'] = 'serif'
 matplotlib.rc('text', usetex=True)
@@ -220,6 +222,12 @@ for i in range(len(filenamelist)):
   #ax.plot(R_centers_plot, urad_ana,  'k-')
   ax.plot(R_centers_norm, urad_ana_norm, color=colorlist[i],linestyle='-',label=labellist[i])
   ax.scatter(R_centers_norm, urad_list_norm, color=colorlist[i])
+
+  # calculate errors
+  error = np.sum(np.abs(urad_ana_norm - urad_list_norm))) / np.sum(urad_ana_norm)
+  print("error = ",error)
+  if(error > MAXERROR):
+    sys.exit(1)
   
 ax.set_ylim(0,200)
 ax.set_xlim(0,0.5)
@@ -238,7 +246,7 @@ ax.tick_params(which='both',direction='in')
 outfilename = "mcp_urad.pdf"
 plt.savefig(outfilename,dpi=300,bbox_inches='tight')
 
-  ### Creating average mu plot
+### Creating average mu plot
 #  fig = plt.figure()
 #  ax = fig.add_subplot(111)
 
