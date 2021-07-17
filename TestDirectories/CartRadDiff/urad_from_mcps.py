@@ -10,7 +10,7 @@ MAXERROR = 0.05
 
 matplotlib.rcParams['font.size'] = 18
 matplotlib.rcParams['font.family'] = 'serif'
-matplotlib.rc('text', usetex=True)
+#matplotlib.rc('text', usetex=True)
 matplotlib.rcParams['xtick.major.size'] = 7
 matplotlib.rcParams['xtick.major.width'] = 2
 matplotlib.rcParams['xtick.major.pad'] = 8
@@ -50,14 +50,14 @@ node_type_field = 'node type'
 
 ### Parameters
 ener_thres = 2.0e-15
-ener_id = 2
-nump_id = 7 #9
-posx_id = 8 #10
-posy_id = 9 #11
-posz_id = 10 #12
-velx_id = 14 #16
-vely_id = 15 #17
-velz_id = 16 #18
+ener_id = 1 #2
+nump_id = 8 #7 #9
+posx_id = 9 #8 #10
+posy_id = 10 #9 #11
+posz_id = 11 #10 #12
+velx_id = 15 #14 #16
+vely_id = 16 #15 #17
+velz_id = 17 #16 #18
 nbin = 64
 ymax = 3.08e18 #1.62545782181e+13 
 xmax = 3.08e18 #1.62545782181e+12 
@@ -224,10 +224,7 @@ for i in range(len(filenamelist)):
   ax.scatter(R_centers_norm, urad_list_norm, color=colorlist[i])
 
   # calculate errors
-  error = np.sum(np.abs(urad_ana_norm - urad_list_norm))) / np.sum(urad_ana_norm)
-  print("error = ",error)
-  if(error > MAXERROR):
-    sys.exit(1)
+  error = np.sum(np.abs(urad_ana_norm - urad_list_norm)) / np.sum(urad_ana_norm)
   
 ax.set_ylim(0,200)
 ax.set_xlim(0,0.5)
@@ -246,6 +243,9 @@ ax.tick_params(which='both',direction='in')
 outfilename = "mcp_urad.pdf"
 plt.savefig(outfilename,dpi=300,bbox_inches='tight')
 
+print("error = ",error)
+if(error > MAXERROR):
+  sys.exit(1)
 ### Creating average mu plot
 #  fig = plt.figure()
 #  ax = fig.add_subplot(111)
