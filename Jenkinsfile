@@ -30,7 +30,7 @@ node{
 		stage('Test'){
                     sh 'mpirun -np 8 ./flash4'
                     sh 'python3 urad_from_mcps.py cartimc_1M_hdf5_chk_ 1 3'
-                    archiveArtifacts artifacts: 'FLASH4/cartraddiff/mcp_urad.pdf'
+                    archiveArtifacts artifacts: 'mcp_urad.pdf'
 		}
             }
         }
