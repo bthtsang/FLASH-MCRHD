@@ -23,7 +23,7 @@ node{
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadDiff -auto -3d -maxblocks=200 -debug -objdir=cartraddiff'
             dir('cartraddiff'){
-	        stage('Build')
+	        stage('Build'){
                     sh 'cp /home/jenkins/Makefile.h .'
                     sh 'make -j'
 		}
