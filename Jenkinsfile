@@ -26,6 +26,8 @@ node{
                 sh 'cp /home/jenkins/Makefile.h .'
                 sh 'make -j'
                 sh 'mpirun -np 8 ./flash4'
+		sh 'python3 radshock_super_1d.py'
+		archiveArtifacts artifacts: '*.pdf'
             }
         }
     }}
