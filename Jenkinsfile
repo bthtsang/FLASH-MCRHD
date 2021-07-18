@@ -19,19 +19,28 @@ node{
         
     }
     
+    stage('CartRadEqm'){
+        dir('FLASH4'){
+            sh 'python3 bin/setup.py CartRadEqm -auto -3d -maxblocks=200 -debug -objdir=cartradeqm'
+            dir('cartradeqm'){
+                sh 'cp /home/jenkins/Makefile.h .'
+                sh 'make -j'
+                sh 'mpirun -np 8 ./flash4'
+                sh 'python3 plot_temperature.py'
+                archiveArtifacts artifacts: 'cartradeqm_TfluidTrad.pdf'
+            }
+        }
+    }
+
     stage('CartRadDiff'){
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadDiff -auto -3d -maxblocks=200 -debug -objdir=cartraddiff'
             dir('cartraddiff'){
-	        stage('Build'){
-                    sh 'cp /home/jenkins/Makefile.h .'
-                    sh 'make -j'
-		}
-		stage('Test'){
-                    sh 'mpirun -np 8 ./flash4'
-                    sh 'python3 urad_from_mcps.py cartimc_1M_hdf5_chk_ 1 3'
-                    archiveArtifacts artifacts: 'mcp_urad.pdf'
-		}
+                sh 'cp /home/jenkins/Makefile.h .'
+                sh 'make -j'
+                sh 'mpirun -np 8 ./flash4'
+                sh 'python3 urad_from_mcps.py cartimc_1M_hdf5_chk_ 1 3'
+                archiveArtifacts artifacts: 'mcp_urad.pdf'
             }
         }
     }
