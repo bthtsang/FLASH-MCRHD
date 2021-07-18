@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 stem = "cartimc_hdf5_chk_"
 filenames = sorted(glob.glob(stem+"*"))
 a = 7.5657e-15 # erg cm^-3 K^-1
+MAXERROR = 0.05
 
 def plot_minmax(name):
     minval = []
@@ -64,6 +65,8 @@ def plot_bothtemperatures():
     radSum = np.sum(Trad)
     fluidSum = np.sum(Tfluid)
     error = np.abs((radSum - fluidSum) / (radSum+fluidSum))
+    if(error > MAXERROR):
+        sys.exit(1)
 
     
 plot_bothtemperatures()
