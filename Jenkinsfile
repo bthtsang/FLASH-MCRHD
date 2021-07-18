@@ -19,7 +19,7 @@ node{
         
     }
     
-    stage('CartRadEqm'){
+    stage('CartRadEqm'){catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadEqm -auto -3d -maxblocks=200 -debug -objdir=cartradeqm'
             dir('cartradeqm'){
@@ -30,9 +30,9 @@ node{
                 archiveArtifacts artifacts: 'cartradeqm_TfluidTrad.pdf'
             }
         }
-    }
+    }}
 
-    stage('CartRadDiff'){
+    stage('CartRadDiff'){catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadDiff -auto -3d -maxblocks=200 -debug -objdir=cartraddiff'
             dir('cartraddiff'){
@@ -43,5 +43,5 @@ node{
                 archiveArtifacts artifacts: 'mcp_urad.pdf'
             }
         }
-    }
+    }}
 }
