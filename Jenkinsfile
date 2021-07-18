@@ -19,6 +19,17 @@ node{
         
     }
     
+    stage('RadiativeShock'){catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
+        dir('FLASH4'){
+            sh 'python3 bin/setup.py RadiativeShock -auto -1d -maxblocks=100 -debug -objdir=radiativeshock1d'
+            dir('radiativeshock1d'){
+                sh 'cp /home/jenkins/Makefile.h .'
+                sh 'make -j'
+                sh 'mpirun -np 8 ./flash4'
+            }
+        }
+    }}
+
     stage('CartRadEqm'){catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE'){
         dir('FLASH4'){
             sh 'python3 bin/setup.py CartRadEqm -auto -3d -maxblocks=200 -debug -objdir=cartradeqm'
