@@ -14,7 +14,7 @@ from matplotlib.ticker import (MultipleLocator, FormatStrFormatter,
 # In[2]:
 
 
-pwd
+#pwd
 
 
 # In[6]:
