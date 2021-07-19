@@ -172,7 +172,7 @@ plt.savefig(f"temp_vs_x.pdf")
 ### Make the temperature vs x plot
 
 ### Preparing the average array, average over y and z directions
-avg_dens = np.mean(np.mean(dens3D, axis=0), axis=0)
+avg_dens = np.mean(np.mean(dens1D, axis=0), axis=0)
 cell_count = np.linspace(1,64,64)-0.5
 posx = cell_count * dx - v0 * time
 posx = posx/1.0e10
