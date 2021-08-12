@@ -1,0 +1,170 @@
+# Copy before editing!!!
+
+### File IO
+basenm                         = "radshock_"
+checkpointFileIntervalStep     = 100000
+checkpointFileIntervalTime     = 3.8e3
+particleFileIntervalTime       = 1.e100
+plotFileIntervalTime           = 1.e100
+wall_clock_checkpoint          = 1.0e30
+nend                           = 2000000
+writeStatSummary               = .TRUE.
+plot_var_1                     = "temp"
+plotfileGridQuantityDP         = .TRUE.
+plotfileMetadataDP             = .TRUE.
+restart                        = .false.
+
+### Grid structure
+geometry                       = "cartesian"
+nblockx                        = 1
+nblocky                        = 1
+nblockz                        = 1
+
+xmax                           = 7.0e10
+xmin                           = 0.0
+#x_refine_center                = 0.5
+
+#ymax                           = 7.0e10
+#ymin                           = 0.0
+#zmax                           = 7.0e10
+#zmin                           = 0.0
+
+
+### Boundary conditions
+xl_boundary_type               = "reflect"
+xr_boundary_type               = "outflow"
+#yl_boundary_type               = "periodic"
+#yr_boundary_type               = "periodic"
+#zl_boundary_type               = "periodic"
+#zr_boundary_type               = "periodic"
+
+
+### Grid refinement
+refine_var_count               = 1
+refine_var_1                   = "dens"
+nrefs                          = 1
+derefine_cutoff_1                = 0.4
+refine_cutoff_1                  = 0.6
+lrefine_max                    = 6
+lrefine_min                    = 6
+enableMaskedGCFill             = .false.
+
+### Timestepping
+dtinit                         = 3.8e2
+dtmax                          = 3.8e2
+dtmin                          = 1.e-99
+tmax                           = 7.6e4
+tstep_change_factor            = 2.0
+
+
+### EOS parameters
+eosMode                        = "dens_ie"
+eosModeInit                    = "dens_temp"
+eos_singleSpeciesA             = 1.0 
+gamma                          = 1.4
+
+
+### Simulation parameters
+sim_pAmbient                   = 1.83359977d-4
+sim_rhoAmbient                 = 7.78e-10
+sim_tempAmbient                = 10.0 #1.0e3
+smallp                         = 1.E-30
+smlrho                         = 1.E-40
+smalle                         = 1.E-30
+
+
+### Gravity parameters
+useGravity                       = .false.
+#gconst                           = -0.43298030605 
+#gdirec                           = "y"
+
+
+### Hydro solver
+useHydro                       = .true.
+cfl                            = 0.6
+interpol_order                 = 2
+updateHydroFluxes              = .true.
+eintSwitch	       	       = 0.0 #Always use Etot
+#ppm_modifystates               = .false.
+use_cma_advection              = .false.
+
+### Found by Benny, this affects the unsplit_update subroutines. 
+use_auxEintEqn                 = .false.
+hydroComputeDtOption           = -1
+
+##  SWITCHES SPECIFIC TO THE UNSPLIT HYDRO SOLVER               ##
+#       I. INTERPOLATION SCHEME:
+order           = 3      # Interpolation order (first/second/third/fifth order)
+slopeLimiter    = "hybrid"   # Slope limiters (minmod, mc, vanLeer, hybrid, limited)
+LimitedSlopeBeta= 1.     # Slope parameter for the "limited" slope by Toro
+charLimiting    = .true. # Characteristic limiting vs.Primitive limiting
+
+use_avisc       = .true. # use artificial viscosity (originally for PPM)
+cvisc           = 0.1    # coefficient for artificial viscosity
+use_flattening  = .true. # use flattening (dissipative) (originally for PPM)
+use_steepening  = .false. # use contact steepening (originally for PPM)
+use_upwindTVD   = .false. # use upwind biased TVD slope for PPM (need nguard=6)
+flux_correct    = .true.
+transOrder      = 1
+shockDetect     = .true.
+shockLowerCFL   = .false.
+
+#       II. RIEMANN SOLVERS: 
+RiemannSolver   = "hllc"       # Roe, HLL, HLLC, LLF, Marquina
+#use_hybridRiemann = .true.
+entropy         = .false.
+EOSforRiemann   = .false.
+
+use_gravHalfUpdate = .false.
+
+
+### IMC module parameters
+pt_es_alpha                  = 1.0
+pt_is_grey                   = .true.
+pt_is_eff_scattering         = .true.
+pt_maxPerProc                = 1100000
+pt_maxnewnum                 = 1000000
+pt_ThermalEmission           = .true.
+pt_grey_eps                  = 1.0e-10
+pt_smlpush                   = 1.0e-10
+
+### Impose an initial radiation field
+pt_initradfield_num          = 0
+
+pt_grey_abs_opac             = 0.39845758354755784
+pt_grey_sca_opac             = 0.0 #0.3245
+pt_dens_threshold            = 1.0e-20
+pt_temp_threshold            = 9.0
+pt_abs_threshold             = 1.0e-10
+pt_num_tmcps_tstep            = 100 
+
+pt_FaceEmission              = .false.
+pt_is_FacePlanck             = .false.
+pt_FaceEmissionSide          = 1
+pt_FaceEmissionAxis          = 1
+pt_FacePlanckTemp            = 5700 
+pt_constFaceFlux             = 1.0e10
+pt_is_therm_face_vel         = .false.
+pt_is_iso_face_vel           = .true.
+pt_is_radial_face_vel        = .false.
+pt_num_fmcps_tstep           = 10 
+
+pt_energy_min_eV             = 0.01
+pt_energy_max_eV             = 20.0
+
+pt_is_corrdl                 = .true.
+pt_is_deposit_energy         = .true.
+pt_is_deposit_urad           = .true.
+pt_is_deposit_momentum       = .true.
+pt_is_thermally_coupled      = .true.
+pt_is_dynamically_coupled    = .false.
+
+pt_is_scat_elastic           = .true.
+pt_is_escat_elastic          = .true.
+pt_is_scat_iso               = .true.
+pt_is_escat_iso              = .true.
+
+### For the bulk gas motion
+pt_is_veldp                  = .false.
+sim_bulkvelaxis              = 1
+sim_bulkvelval               = -6.0e5 # -6.0e5 for sub-critical, -20.0e5 for super-critical
