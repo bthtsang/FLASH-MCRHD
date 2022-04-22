@@ -105,6 +105,7 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
 
   ! Added by Benny for spherical coordinate system
   real, dimension(MDIM) :: vel_reflected
+  real, dimension(MDIM) :: vel_rotated
 
   ! Benny debugging
   real, dimension(MDIM) :: old_mcp_pos, old_mcp_vel
@@ -193,6 +194,16 @@ subroutine gr_ptOneFaceBC(particle,propCount, axis, face, blockID, lostParticles
   elseif(gr_domainBC(face,axis)==PERIODIC) then
      dist=(-1)**(face-1)*(corner(HIGH)-corner(LOW))
      particle(pos)=dist+particle(pos)
+
+     ! added by Benny for sph coord
+     if (gr_geometry == SPHERICAL) then
+       call rotate_vel_by_angle(particle(gr_ptVelx:gr_ptVelz),&
+                                (-1)**(face)*(corner(HIGH)-corner(LOW)),&
+                                vel_rotated)
+       particle(gr_ptVelx:gr_ptVelz) = vel_rotated
+     end if
+     !!
+
      if(predictor)particle(posPred)=dist+particle(posPred)
   else                       ! default for now - KW
      lostParticles=lostParticles+1
@@ -271,3 +282,28 @@ subroutine reflect_velocity(pos, vel, axis, face, vel_reflected)
   end if
 
 end subroutine reflect_velocity
+
+! subroutine to rotate velocity vector by an angle for phi's 
+! periodic boundary conditions
+subroutine rotate_vel_by_angle(velold, angle, velnew)
+  use new_mcp, only : cross_product
+
+#include "constants.h"
+  implicit none
+  real, dimension(MDIM), intent(in) :: velold
+  real, intent(in) :: angle
+  real, dimension(MDIM), intent(out) :: velnew
+
+  ! aux variables
+  real, dimension(MDIM), parameter :: k_hat = (/ 0.0, 0.0, 1.0 /)
+  real, dimension(MDIM) :: vel_rot
+
+  ! Rodrigues' rotation formula
+  vel_rot = velold*cos(angle) + cross_product(k_hat, velold)*sin(angle)&
+            + k_hat*dot_product(k_hat, velold)*(1.0d0 - cos(angle))
+
+  velnew = vel_rot
+
+end subroutine rotate_vel_by_angle
+
+
