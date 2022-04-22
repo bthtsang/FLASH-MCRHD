@@ -15,6 +15,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
                              Grid_releaseBlkPtr, Grid_sortParticles
   use Driver_interface, only : Driver_abortFlash
   use ionization, only : calc_recomb_emissivity
+  use ddmc, only : calc_block_leakage_opac
   implicit none
 #include "Flash.h"
 #include "constants.h"
@@ -46,6 +47,9 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
   integer :: i_old_begin, i_old_end
   integer, dimension(MAXBLOCKS,NPART_TYPES) :: particlesPerBlk
+
+  ! ddmc case
+  real, pointer :: scratchVec(:,:,:,:)
 
   call Timers_start("MCP Emission")
 
@@ -83,6 +87,14 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
     ! Reset Monte Carlo tally variables
     call reset_deposition_var(solnVec)
+
+    ! compute leakage opacity for grey DDMC case
+#ifdef FLASH_GREY_DDMC
+    call Grid_getBlkPtr(blkList(b), scratchVec, SCRATCH)
+    call zero_leakage_opac(scratchVec)
+    call calc_block_leakage_opac(blkList(b), scratchVec, solnVec)
+    call Grid_releaseBlkPtr(blkList(b), scratchVec)
+#endif
 
     ! Thermal radiation
     call thermal_emission(blkList(b), solnVec, dtNew,&
@@ -166,6 +178,7 @@ subroutine emit_mcps(particles, p_count, dtNew, ind)
 
     ! Other bookkeeping attributes
     particles(ISNW_PART_PROP, old_pt_numLocal+1:pt_numLocal) = 1.0d0
+    particles(FATE_PART_PROP, old_pt_numLocal+1:pt_numLocal) = 0.0d0
     particles(ISAB_PART_PROP, old_pt_numLocal+1:pt_numLocal) = 0.0d0
     particles(ISCP_PART_PROP, old_pt_numLocal+1:pt_numLocal) = 0.0d0
 
@@ -794,9 +807,12 @@ subroutine face_emission(blockID, solnVec, dtNew,&
                              pt_is_radial_face_vel, pt_is_iso_face_vel,&
                              pt_is_therm_face_vel, pt_smlpush,&
                              pt_num_fmcps_percell, pt_percell_reg_dt,&
-                             pt_samp_mode
+                             pt_samp_mode,&
+                             pt_PointPulse, pt_PointPulseErad,&
+                             pt_is_ddmc
   use Grid_interface, only : Grid_getBlkBoundBox, Grid_getDeltas,&
-                             Grid_getBlkBC, Grid_getBlkPhysicalSize
+                             Grid_getBlkBC, Grid_getBlkPhysicalSize,&
+                             Grid_getListOfBlocks
   use Grid_data, only: gr_geometry
   use Simulation_data, only : sigma, clight
   use Driver_interface, only : Driver_abortFlash
@@ -808,6 +824,8 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   use spherical, only : get_cartesian_position
   ! debug
   use Driver_data, only : dr_meshme
+  use opacity, only : calc_abs_opac, calc_sca_opac
+  use ddmc, only : deposit_face_momentum_ddmc
 
   implicit none
 #include "Flash.h"
@@ -832,6 +850,11 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   integer :: i, ii, jj
   real :: flux, dE
   real, parameter :: eps_dummy = 1.0d-11
+  ! saved attributes
+  logical, save :: first_call = .true.
+  integer, save :: num_of_calls = 0
+  integer, dimension(MAXBLOCKS) :: blkList
+  integer :: numofblks
 
   real, dimension(MDIM) :: newxyz, newvel, cart_pos, r_hat
   integer, dimension(MDIM) :: cellID
@@ -851,6 +874,12 @@ subroutine face_emission(blockID, solnVec, dtNew,&
   real :: reg_dt, dt_frac, face_area_cell
   real :: dE_offset
 
+  ! ddmc
+  logical :: is_trap
+  real :: ka, ks
+  real, dimension(NPART_PROPS) :: particle
+  integer, dimension(LOW:HIGH), parameter :: side2dir = (/ 1, -1 /)
+
   ! Initialization
   now_num = 0
   now_pos = 0.0d0
@@ -861,6 +890,23 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 
   ! Quit if not including face emission
   if (.NOT. pt_FaceEmission) return
+
+  ! Exit after first call if in pulse mode
+  if ((.not. first_call) .and. (pt_PointPulse)) then
+    return
+  end if
+
+  ! Actual execution of subroutine for this processor
+  ! increment number of calls
+  num_of_calls = num_of_calls + 1
+
+  ! Get the total number of leaf blocks
+  call Grid_getListOfBlocks(LEAF, blkList, numofblks)
+
+  ! Flag it as non-first_call when all leaf blocks are done
+  if (num_of_calls == numofblks) then
+    first_call = .false.
+  end if
 
   if (pt_is_FacePlanck) then
     flux = sigma * (pt_FacePlanckTemp**4)
@@ -932,7 +978,13 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 
         call get_face_area(ii, jj, bndBox, FaceArea)
 
-        dE = flux * FaceArea * dtNew
+        if (pt_PointPulse) then
+          dE = pt_PointPulseErad
+        else ! continuous source
+          dE = flux * FaceArea * dtNew
+        end if
+
+        !dE = flux * FaceArea * dtNew
 
         dE_per_mcp = dE / num_face_mcps !pt_num_fmcps_tstep
 
@@ -1036,6 +1088,7 @@ subroutine face_emission(blockID, solnVec, dtNew,&
 
           call get_cellID(bndBox, deltaCell, newxyz, cellID)
 
+
           call sample_energy(solnVec, cellID, pt_samp_mode,&
                              pt_FacePlanckTemp, newenergy)
           weight_per_mcp = dE_per_mcp / newenergy
@@ -1046,6 +1099,28 @@ subroutine face_emission(blockID, solnVec, dtNew,&
           now_energy(now_num + i) = newenergy
           now_vel(:, now_num + i) = newvel
           now_weight(now_num + i) = weight_per_mcp
+
+          ! deposit face flux for ddmc cells, taking care of bnd
+          ! TRAP_VAR is already computed by an earlier emissiom subroutine
+#ifdef FLASH_GREY_DDMC
+          is_trap = solnVec(TRAP_VAR, cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+
+          if (is_trap) then
+            call calc_abs_opac(cellID, solnVec, eps_dummy, 1.0, ka)
+            call calc_sca_opac(cellID, solnVec, eps_dummy, 1.0, ks)
+
+            particle = 0.0 ! zero out content
+            ! only populate relevant attributes
+            particle(NUMP_PART_PROP) = weight_per_mcp
+            particle(ENER_PART_PROP) = newenergy
+
+            call deposit_face_momentum_ddmc(blockID, cellID, 0.0, dtNew,&
+                                            1.0, ka, ks,&
+                                            particle,&
+                                            .true., pt_FaceEmissionAxis,& 
+                                            side2dir(pt_FaceEmissionSide))
+          end if
+#endif
 
           ! End of sampling the face MCPs
         end do
@@ -1112,8 +1187,9 @@ subroutine get_face_area(dir, axis, bndBox, FaceArea)
       FaceArea = 2.0 * PI * r_in*r_in&
                           * (cos(theta_in) - cos(theta_out))
     else
-      call Driver_abortFlash("face_emission: not yet implemented&
-                              for 1D/2D simulations.")
+      FaceArea = 4.0 * PI * r_in*r_in
+      !call Driver_abortFlash("face_emission: not yet implemented&
+      !                        for 1D/2D simulations.")
     end if
   else
     call Driver_abortFlash("get_face_area: unknown geometry requested.")
@@ -1236,7 +1312,29 @@ subroutine reset_deposition_var(solnVec)
 #ifdef COOL_VAR
   solnVec(COOL_VAR,:,:,:) = 0.0
 #endif
+#ifdef FLASH_GREY_DDMC
+  solnVec(TRAP_VAR,:,:,:) = 0.0
+  solnVec(NDEP_VAR,:,:,:) = 0.0
+  solnVec(DDMX_VAR,:,:,:) = 0.0
+  solnVec(DDMY_VAR,:,:,:) = 0.0
+  solnVec(DDMZ_VAR,:,:,:) = 0.0
+#endif
 
 end subroutine reset_deposition_var
+
+! zeroing out grey ddmc's leakage opacity
+subroutine zero_leakage_opac(scratchVec)
+  implicit none
+#include "Flash.h"
+
+  real, pointer :: scratchVec(:,:,:,:)
+
+#ifdef FLASH_GREY_DDMC
+  scratchVec(KLEX_SCRATCH_GRID_VAR,:,:,:) = 0.0
+  scratchVec(KLEY_SCRATCH_GRID_VAR,:,:,:) = 0.0
+  scratchVec(KLEZ_SCRATCH_GRID_VAR,:,:,:) = 0.0
+#endif
+
+end subroutine zero_leakage_opac
 
 end module emission
