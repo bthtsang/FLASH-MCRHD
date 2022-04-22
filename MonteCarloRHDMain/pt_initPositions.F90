@@ -64,20 +64,23 @@ subroutine pt_initPositions (blockID,success)
   use Particles_data, only : pt_numLocal, pt_initradfield_num, pt_is_veldp,&
                              pt_maxPerProc, particles, pt_meshMe,&
                              pt_indexList, pt_indexCount, pt_samp_Tgas,&
-                             pt_interp_vel_LT
+                             pt_interp_vel_LT, pt_initrad_use_Tgas,&
+                             pt_initradfield_adapt_rf, pt_initrad_Trad
   use pt_interface, only :  pt_updateTypeDS
   use Grid_data, only : gr_geometry
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getBlkBoundBox,&
                              Grid_getDeltas, Grid_getSingleCellVol,&
                              Grid_getBlkPtr, Grid_releaseBlkPtr,&
                              Grid_outsideBoundBox,&
-                             Grid_sortParticles, Grid_moveParticles
+                             Grid_sortParticles, Grid_moveParticles,&
+                             Grid_getBlkRefineLevel
   use Simulation_data, only : a_rad
   use new_mcp, only : sample_cell_position, sample_iso_velocity,&
                       sample_time, sample_energy
   use relativity, only : compute_gamma, transform_comoving_to_lab
   use transport, only : interp_gas_vel_at_mcp
   use spherical, only : get_cartesian_velocity
+  use tree, only : lrefine_max
   use Driver_interface, only : Driver_abortFlash
 
   implicit none
@@ -113,6 +116,10 @@ subroutine pt_initPositions (blockID,success)
   real, dimension(zcoordsize) :: zcoords
   real, dimension(MDIM) :: v_gas, v_gas_cart
   real, dimension(MDIM) :: cell_coords
+
+  ! refinement-aware MCP number
+  integer :: cur_rflvl
+  integer :: mcps_per_cell
 
   ! Commenting out stub code
   !success = .true. ! DEV: returns true because this stub creates no particles,
@@ -185,14 +192,24 @@ subroutine pt_initPositions (blockID,success)
           dV_0 = gamm_fac * dV
         end if
 
-        Tgas = solnVec(TEMP_VAR, i, j, k)
+        if (pt_initrad_use_Tgas) then
+          Tgas = solnVec(TEMP_VAR, i, j, k)
+        else
+          Tgas = pt_initrad_Trad
+        end if
+
+        mcps_per_cell = pt_initradfield_num
+        if ((pt_initradfield_adapt_rf) .and. (xcoords(i) <= 6.96e13)) then
+          call Grid_getBlkRefineLevel(blockID, cur_rflvl)
+          mcps_per_cell = mcps_per_cell * (2**((lrefine_max - cur_rflvl)*NDIM))
+        end if
 
         ! radiation energy in CMF
         totalE = a_rad * (Tgas**4) * dV_0
-        weight = totalE / pt_initradfield_num
+        weight = totalE / mcps_per_cell
 
         ! Start loop to sample MCPs
-        do ii = 1, pt_initradfield_num
+        do ii = 1, mcps_per_cell
           p = p + 1
 
           call sample_cell_position(bndBox, deltaCell, cellID, newxyz)
