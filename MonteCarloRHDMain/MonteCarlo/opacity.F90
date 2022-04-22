@@ -5,7 +5,7 @@ module opacity
 
 subroutine calc_abs_opac(cellID, solnVec, energy, dshift, ka)
   use Particles_data, only : pt_is_grey, pt_grey_abs_opac, pt_dens_threshold,&
-                             pt_is_kt_opac, ev2erg,&
+                             pt_is_kt_opac, pt_is_shadow_opac, ev2erg,&
                              pt_single_line_opac, pt_line_center_ener,&
                              pt_line_width_ener, pt_line_center_kappa
   use Driver_interface,  ONLY : Driver_abortFlash
@@ -36,6 +36,10 @@ subroutine calc_abs_opac(cellID, solnVec, energy, dshift, ka)
       ka = 0.10*(temp_opac/10.0)**2
     end if 
 
+    if (pt_is_shadow_opac) then
+      temp_opac = temp
+      ka = rho*temp**(-3.5)
+    end if
   else
     if (pt_single_line_opac) then
       ka = pt_line_center_kappa
