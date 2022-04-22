@@ -1,0 +1,26 @@
+
+### Define DDMC-specific variables
+#
+### Define preprocessor parameter
+PPDEFINE FLASH_GREY_DDMC
+
+### Grid variable to contain DDMC flag
+VARIABLE TRAP TYPE: PER_VOLUME
+
+### Face variable for momentum deposition
+FACEVAR DDFX
+FACEVAR DDFY
+FACEVAR DDFZ
+
+### Cell-centered variables for storing average depo
+VARIABLE DDMX TYPE: PER_MASS
+VARIABLE DDMY TYPE: PER_MASS
+VARIABLE DDMZ TYPE: PER_MASS
+
+### Leakage opacities for grey DDMC
+SCRATCHVAR KLEX
+SCRATCHVAR KLEY
+SCRATCHVAR KLEZ
+#SCRATCHFACEXVAR KLEX
+#SCRATCHFACEYVAR KLEY
+#SCRATCHFACEZVAR KLEZ
