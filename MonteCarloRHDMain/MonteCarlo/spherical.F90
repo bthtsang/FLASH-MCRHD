@@ -212,4 +212,96 @@ subroutine get_cartesian_velocity(pos, vel, cart_vel)
 
 end subroutine get_cartesian_velocity
 
+! subroutine to compute surface area of spherical cells
+subroutine get_spherical_cell_face_area(bndBox, deltaCell,&
+                                        axis, faceID, area)
+  implicit none
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
+  real, dimension(MDIM), intent(in) :: deltaCell
+  integer, intent(in) :: axis
+  integer, dimension(MDIM) :: faceID
+  real, intent(out) :: area
+
+  ! aux variables
+  real :: r_in, r_out, theta_in, theta_out, phi_in, phi_out
+  real :: r_0, theta_0
+
+  ! radial, faceID(IAXIS) is the face index
+  if (axis == IAXIS) then
+
+    r_0 = bndBox(LOW, IAXIS) ! left boundary
+    r_0 = r_0 + (faceID(IAXIS) - NGUARD - 1)*deltaCell(IAXIS)
+
+    area = 4.0*PI*r_0*r_0
+
+    if (NDIM >= 2) then
+
+      theta_in = bndBox(LOW, JAXIS) ! left boundary
+      theta_in = theta_in + (faceID(JAXIS) - NGUARD - 1)*deltaCell(JAXIS)
+      theta_out = theta_in + deltaCell(JAXIS)
+
+      area = 2.0*PI*r_0*r_0*(cos(theta_in) - cos(theta_out))
+
+      if (NDIM == 3) then
+        phi_in = bndBox(LOW, KAXIS) ! left boundary
+        phi_in = phi_in + (faceID(KAXIS) - NGUARD - 1)*deltaCell(KAXIS)
+        phi_out = phi_in + deltaCell(KAXIS)
+
+        area = r_0*r_0*(phi_out - phi_in)*(cos(theta_in) - cos(theta_out))
+      end if
+    end if
+
+  ! theta, faceID(JAXIS) is the face index
+  else if (axis == JAXIS) then
+
+    theta_0 = bndBox(LOW, JAXIS)
+    theta_0 = theta_0 + (faceID(JAXIS) - NGUARD - 1)*deltaCell(JAXIS)
+
+    r_in = bndBox(LOW, IAXIS)
+    r_in = r_in + (faceID(IAXIS) - NGUARD - 1)*deltaCell(IAXIS)
+    r_out = r_in + deltaCell(IAXIS)
+
+    if (NDIM >= 2) then
+      ! 2D result
+      area = PI * sin(theta_0) * (r_out*r_out - r_in*r_in)
+
+      if (NDIM == 3) then
+        phi_in = bndBox(LOW, KAXIS) ! left boundary
+        phi_in = phi_in + (faceID(KAXIS) - NGUARD - 1)*deltaCell(KAXIS)
+        phi_out = phi_in + deltaCell(KAXIS)
+
+        area = 0.5 * sin(theta_0) * (phi_out - phi_in) *&
+                     (r_out*r_out - r_in*r_in)
+      end if
+
+    end if
+    if (NDIM == 1) then
+      call Driver_abortFlash("get_spherical_cell_face_area: 1D but axis == JAXIS.")
+    end if
+
+  ! phi
+  else if (axis == KAXIS) then
+    r_in = bndBox(LOW, IAXIS)
+    r_in = r_in + (faceID(IAXIS) - NGUARD - 1)*deltaCell(IAXIS)
+    r_out = r_in + deltaCell(IAXIS)
+
+    theta_in = bndBox(LOW, JAXIS) ! left boundary
+    theta_in = theta_in + (faceID(JAXIS) - NGUARD - 1)*deltaCell(JAXIS)
+    theta_out = theta_in + deltaCell(JAXIS)    
+
+
+    if (NDIM == 3) then
+      area = 0.5 * (theta_out - theta_in) * (r_out*r_out - r_in*r_in)
+    else
+      call Driver_abortFlash("get_spherical_cell_face_area: 1/2D but axis == KAXIS.")
+    end if
+
+  end if
+
+end subroutine get_spherical_cell_face_area
+
 end module spherical
