@@ -26,7 +26,7 @@ subroutine Particles_finalize()
   use pt_interface, ONLY : pt_initFinalize
   implicit none
   if(useParticles) deallocate(particles)
-  if(.not. pt_is_grey) then
+  if(useParticles .and. (.not. pt_is_grey)) then
     deallocate(pt_energy_grid)
     deallocate(pt_energy_centers)
     deallocate(pt_delta_energy)
