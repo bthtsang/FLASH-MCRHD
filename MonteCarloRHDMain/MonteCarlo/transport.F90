@@ -10,7 +10,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                              Grid_getBlkPtr, Grid_releaseBlkPtr,&
                              Grid_outsideBoundBox, Grid_getBlkType,&
                              Grid_sortParticles, Grid_moveParticles,&
-                             Grid_getBlkIDFromPos ! Benny debugging
+                             Grid_getBlkIDFromPos,& ! Benny debugging
+                             Grid_getListOfBlocks,&
+                             Grid_getBlkRefineLevel
   use Grid_data, only : gr_geometry
   use gr_interface, only : gr_findNeghID
   use Particles_interface, only : Particles_getGlobalNum
@@ -29,13 +31,21 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                              pt_is_veldp, pt_interp_vel_LT,&
                              pt_is_photoionization, pt_is_es_photoionization,&
                              pt_is_caseB, pt_is_veldp,&
-                             pt_keepLostParticles
+                             pt_keepLostParticles, pt_is_ddmc, pt_LEAK_ID,&
+                             pt_DDMC_STAY_ID
   use Paramesh_comm_data, only : amr_mpi_meshComm
   use Driver_interface, only : Driver_abortFlash
   use spherical, only : get_cartesian_position, get_spherical_velocity,&
                         get_cartesian_velocity, get_quadrant
   use opacity, only : calc_abs_opac, calc_sca_opac, get_fleck
   use scattering, only : scatter_mcp
+  use ddmc, only : get_grey_leakage_opac, leak_mcp_to_neighbor,&
+                   deposit_face_momentum_ddmc, reset_particle_remote_depo,&
+                   store_ddmc_remote_momentum_deposition,&
+                   deposit_energy_ddmc, divide_by_face_area,&
+                   avg_face_flux_and_populate_arad,&
+                   compute_mc2ddmc_convert_prob,&
+                   sample_velocity_ddmc2imc_general
   use ionization, only : calc_pi_opac, deposit_ionizing_radiation,&
                          eff_scatter_ionizing_mcp,&
                          sanitize_fully_ionized_cell
@@ -134,6 +144,21 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   real :: trem_b4_LT, trem_af_LT
   real :: init_posx, final_posx
 
+  ! DDMC
+  real, pointer :: scratchVec(:,:,:,:)
+  real, dimension(LOW:HIGH, MDIM) :: k_leak
+  logical :: is_trap, is_trap_negh
+  real, dimension(MDIM) :: newxyz
+  integer :: leak_axis, leak_dir
+  integer :: remote_depo
+  integer, dimension(MAXBLOCKS) :: blkList
+  integer :: blk, numofblks
+  integer :: prev_fate
+  integer :: cross_axis, cross_dir
+  real :: p_convert, xi
+  logical :: is_converted
+
+  real :: rho, dA, mcp_energy, leaked_dp
 
   integer, dimension(MDIM) :: xcellID4period
 
@@ -231,6 +256,9 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
         call Grid_getBlkPtr(currentBlk, solnVec, CENTER)
 
+#ifdef FLASH_GREY_DDMC
+        call Grid_getBlkPtr(currentBlk, scratchVec, SCRATCH)
+#endif
 
         ! gather current cell's gas velocity
         v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
@@ -306,10 +334,61 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
           print *, "fpbndBoxZ", bndBox(:,3)
         end if
 
+        ! DDMC transport
+        k_leak = 0.0 ! default non leakage
+        is_trap = .false.
+#ifdef FLASH_GREY_DDMC
+        if (pt_is_ddmc) then
+          call get_grey_leakage_opac(cellID, scratchVec, k_leak)
+          is_trap = solnVec(TRAP_VAR,&
+                              cellID(IAXIS), cellID(JAXIS), cellID(KAXIS))
+
+          ! carry out remote momentum deposition if current cell is in DDMC
+! note: 11-03-2021. I do not think remote deposition is needed for in-block
+! leakages
+          if (is_trap) then
+            remote_depo = int(particles(FATE_PART_PROP,i))
+            leak_axis = jiabs(remote_depo)
+            leak_dir = sign(1, remote_depo)
+
+            if (remote_depo /= 0) then ! there is deposition left to do
+              ! dt = 0.0 for remote deposition
+
+              if ((leak_axis < 1) .or. (leak_axis>3)) then
+                print *, "remote", leak_axis, leak_dir, is_trap
+                print *, "part_fate", particles(FATE_PART_PROP,i), remote_depo
+              end if 
+              call deposit_face_momentum_ddmc(currentBlk, cellID, 0.0, dtNew,&
+                                              fleck, k_a_cmf, k_s_cmf,&
+                                              particles(:,i),&
+                                              .true., leak_axis, leak_dir)
+              call reset_particle_remote_depo(particles(:,i))
+            end if
+          end if
+        end if
+#endif
+
         call determine_fate(bndBox, deltaCell, particles(:, i), cellID,&
-                            k_a, k_s, fleck, k_ion, fleckp, N_H, N_H1,&
+                            k_a, k_s, k_leak, is_trap, fleck, k_ion, fleckp, N_H, N_H1,&
                             mcp_fate, xcellID, min_time, min_dist,&
                             is_empty_cell_event)
+        ! debugging for interface
+!        if ((is_trap) .and. (currentPos(1) > 1.44375e+18)) then
+!          is_trap_negh = solnVec(TRAP_VAR,&
+!                            cellID(IAXIS)+1, xcellID(JAXIS), xcellID(KAXIS))
+!          print *, "AT JUMP", is_trap, is_trap_negh
+!          print *, "posx", currentPos(1)
+!          print *, "cellID", cellID
+!          print *, "ka/ks", k_a, k_s
+!          print *, "kleakx", k_leak(:, IAXIS)
+!          print *, "kleaky", k_leak(:, JAXIS)
+!          print *, "kleakz", k_leak(:, KAXIS)
+!
+!          print *, "rawscratch", scratchVec(KLEX_SCRATCH_GRID_VAR,&
+!                                            cellID(IAXIS):cellID(IAXIS)+1,&
+!                                            cellID(JAXIS),&
+!                                            cellID(KAXIS))
+!        end if
 
         !if (min_time < 1.0d-20) then
         !  print *, "smldt_pos", particles(POSX_PART_PROP:POSZ_PART_PROP,i)
@@ -319,6 +398,27 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !  print *, "cellID", cellID
         !  print *, "xcellID", xcellID
         !end if
+
+!        if (int(particles(TAG_PART_PROP, i)) == 1) then
+!          print *, "tag1", numpass, mcp_fate, min_time
+!          print *, "k_leak", k_leak
+!          print *, "cellID", cellID
+!          print *, "xcellID", xcellID
+!          print *, "pos", particles(POSX_PART_PROP:POSZ_PART_PROP,i)
+!          print *, "vel", particles(VELX_PART_PROP:VELZ_PART_PROP,i)
+!          print *, "trap", is_trap
+
+          ! leakage event
+!          if (mcp_fate == 7) then
+!            rho = solnVec(DENS_VAR, cellID(1), cellID(2), cellID(3))
+!            mcp_energy = particles(ENER_PART_PROP,i)*particles(NUMP_PART_PROP,i)
+!            leaked_dp = mcp_energy*k_s/clight/dtNew/deltaCell(1)/deltaCell(1)/rho
+!            print *, "ddmx manual", mcp_energy, leaked_dp 
+!          end if
+!        end if
+
+        ! debugging for non-advancing's fate
+        !particles(FATE_PART_PROP,i) = mcp_fate
 
         call get_spherical_velocity(currentPos, currentVel, sph_vel)
 
@@ -345,7 +445,10 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                                       particles(VELX_PART_PROP:VELZ_PART_PROP,i),&
                                       sph_vel)
           print *, "sph vel", sph_vel
-          call Driver_abortFlash("Too many RT subcycles! Aborted.")
+
+          if (numpass > pt_max_rt_iterations+10) then
+            call Driver_abortFlash("Too many RT subcycles! Aborted.")
+          end if
         end if
 
         ! Perform actions according to mcp_fate
@@ -540,11 +643,60 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             pos_after_adv = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
             xcellID_original = xcellID
 
+            ! MC2DDMC capability
+            is_trap_negh = .false. ! default to false
+            is_converted = .false. ! 
+#ifdef FLASH_GREY_DDMC
+            if (pt_is_ddmc) then
+              is_trap_negh = solnVec(TRAP_VAR,&
+                               xcellID(IAXIS), xcellID(JAXIS), xcellID(KAXIS))
+              if (is_trap_negh) then
+                ! inferring crossing axis and direction
+                do ii = 1, MDIM
+                ! there should just be one
+                  if (cellID(ii) /= xcellID(ii)) then
+                    cross_axis = ii
+                    cross_dir  = xcellID(ii) - cellID(ii)
+                  end if
+                end do
+
+                ! compute p_convert
+                ! also sample to decide whether to convert
+                call compute_mc2ddmc_convert_prob(currentBlk, bndBox, deltaCell, solnVec,&
+                                                  xcellID, particles(:,i),&
+                                                  cross_axis, cross_dir,&
+                                                  p_convert, is_converted)
+
+                ! if converted, nothing to change in the following, just add a
+                ! local face momentum depo after deposit_energy_momentum, and
+                ! the case for remote when isoutside==true.
+
+             !   if (is_converted) then
+             !     call deposit_face_momentum_ddmc(currentBlk, cellID,&
+             !                                     min_time, dtNew,&
+             !                                     fleck, k_a_cmf, k_s_cmf,&
+             !                                     particles(:,i),&
+             !                                     .false., cross_axis, cross_dir)
+             !   end if
+
+                ! produce a boolean flag for sanitize_boundary_mcp call, if it
+                ! is returned, then do an opposite push to get back to parent
+                ! cell. Also see xcellID = cellID
+
+              end if
+
+            end if
+#endif
+
             ! At this point, the MCP must be near a boundary
             ! Make sure to push it across the boundary
             call sanitize_boundary_mcp(cellID, xcellID, &
-                                       bndBox, deltaCell, particles(:,i))
+                                       bndBox, deltaCell, &
+                                       is_trap_negh, is_converted,&
+                                       particles(:,i))
             pos_after_push  = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+
+            
 
             ! Obtain the neighbor direction before BC check to preserve the
             ! correct neghdir
@@ -568,6 +720,48 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
             call deposit_energy_momentum(solnVec, cellID, v_gas, particles(:,i),&
                                          mcp_fate, min_time, dtNew,&
                                          fleck, k_a_cmf, k_s_cmf, dvol)
+
+#ifdef FLASH_GREY_DDMC
+            ! modify returned MCP's velocity after initial IMC deposition
+            if (is_trap_negh .and. (.not. is_converted)) then
+
+              ! s.t. it is as if leaking from neighbor so flipping direction of cross_dir
+              call sample_velocity_ddmc2imc_general(xcellID, cross_axis, -cross_dir,&
+                                            bndBox, deltaCell,&
+                                            newvel)
+              particles(VELX_PART_PROP:VELZ_PART_PROP,i) = newvel
+
+              ! returned, no longer crossing boundary
+              xcellID = cellID
+
+              ! write a new ddmc2imc vel sampling routine and call here.
+              ! expand sample_velocity_ddmc2imc with more inputs to get the unit
+              ! vectors along rtp
+
+              ! flip velocity vector wrt cross_axis
+              ! write general ddmc subroutine to flip a velocity vector
+              ! wrt a chosen direction in xyz or rtp.
+              ! then populate that to ddmc2imc leak tooooo
+              ! one can borrow sample_velocity_ddmc2imc, with a dummy forward
+              ! direction, then assign vel along rtp_hat as the forward.
+            end if
+            ! cross_axis and cross_dir must be defined if (is_trap_negh)
+            if (is_trap_negh .and. is_converted) then
+
+              if (isoutside) then
+                call store_ddmc_remote_momentum_deposition(cross_axis, cross_dir,&
+                                                         is_trap_negh, particles(:, i))
+              else
+                call deposit_face_momentum_ddmc(currentBlk, cellID,&
+                                                  min_time, dtNew,&
+                                                  fleck, k_a_cmf, k_s_cmf,&
+                                                  particles(:,i),&
+                                                  .false., cross_axis,&
+                                                  cross_dir)
+              end if
+            end if
+#endif
+
             pos_af_LT = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
             vel_af_LT = particles(VELX_PART_PROP:VELZ_PART_PROP, i)
             trem_af_LT = particles(TREM_PART_PROP, i)
@@ -639,12 +833,14 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
                 call Grid_getDeltas(neghID(BLKNO),new_deltaCell)
 
                 ! Make sure the phi values are legal for the new_cellID 
-                call sanitize_phi_periodic_BCs(cellID, xcellID, &
-                                           bndBox, deltaCell, particles(:,i))
+                if (gr_geometry == SPHERICAL) then
+                  call sanitize_phi_periodic_BCs(cellID, xcellID, currentBlk,&
+                                             bndBox, deltaCell, particles(:,i))
+                end if
                 ! Do the same check for Cartesian coordinate
                 pos_b4_period = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
                 xcellID4period = xcellID
-                call sanitize_cart_periodic_BCs(cellID, xcellID, &
+                call sanitize_cart_periodic_BCs(cellID, xcellID, currentBlk,&
                                            bndBox, deltaCell, particles(:,i))
                 pos_af_period = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
 
@@ -789,8 +985,13 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               print *, "Old cell", cellID 
               print *, "Target cell", xcellID
               print *, "Current cell", new_cellID
+              print *, "p_convert", p_convert
+              print *, "is_trap_negh", is_trap_negh
+              print *, "is_converted", is_converted
               print *, "Old position", currentPos
               print *, "Current position", newPos
+              print *, "Old velocity", currentVel
+              print *, "new vel", newvel
               print *, ">pos_before_adv", pos_before_adv
               print *, ">pos_after_adv", pos_after_adv
               print *, ">pos_after_push", pos_after_push
@@ -870,7 +1071,7 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
               call calc_distance_to_phi_wall(bndBox, deltaCell,&
                           particles(:, i), cellID, phi_dist, phi_dir, .true.)
               call distance_to_closest_wall(bndBox, deltaCell, particles(:, i), cellID,&
-                                xcellID, closest_dist, .true.)
+                                k_leak, is_trap, xcellID, closest_dist, .true.)
 
               call Driver_abortFlash("transport: cell boundary not crossed.")
             end if
@@ -902,6 +1103,146 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
 
             particles(TREM_PART_PROP, i) = particles(TREM_PART_PROP, i)&
                                          - min_time
+
+#ifdef FLASH_GREY_DDMC
+          case (pt_LEAK_ID)
+            is_trap_negh = solnVec(TRAP_VAR,&
+                            xcellID(IAXIS), xcellID(JAXIS), xcellID(KAXIS))
+
+            ! infer leak_axis and leak_dir
+            do ii = 1, MDIM
+              ! there should just be one
+              if (cellID(ii) /= xcellID(ii)) then
+                leak_axis = ii
+                leak_dir  = xcellID(ii) - cellID(ii)
+              end if
+            end do
+            
+            ! below takes care of both ddmc2ddmc and ddmc2imc leakage
+            pos_before_adv = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            call leak_mcp_to_neighbor(bndBox, deltaCell, xcellID, cellID,&
+                                      is_trap_negh, leak_axis, leak_dir, particles(:, i))
+            pos_after_adv = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+
+            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            call Grid_outsideBoundBox(newPos, bndBox, isoutside, neghdir)
+
+            ! only store if moving outside current block
+            if (isoutside) then
+              call store_ddmc_remote_momentum_deposition(leak_axis, leak_dir,&
+                                                         is_trap_negh, particles(:, i))
+            end if
+
+            call deposit_energy_ddmc(solnVec, cellID, v_gas, particles(:,i),&
+                                         mcp_fate, min_time, dtNew,&
+                                         fleck, k_a_cmf, k_s_cmf, dvol)
+
+            call deposit_face_momentum_ddmc(currentBlk, cellID, min_time, dtNew,&
+                                            fleck, k_a_cmf, k_s_cmf,&
+                                            particles(:,i),&
+                                            .false., leak_axis, leak_dir)
+
+            ! check/update new location
+            newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            call get_cellID(bndBox, deltaCell, newPos, new_cellID)
+
+            is_crossproc = .false.
+            if (isoutside) then
+              if (pt_use_fromPos) then
+                call Grid_getBlkIDFromPos(newPos, neghID(BLKNO), neghID(PROCNO),&
+                                          amr_mpi_meshComm)
+              else
+                call gr_findNeghID(currentBlk, newPos, neghdir, neghID)
+              end if
+
+              if (neghID(PROCNO) == currentProc) then
+                call Grid_getBlkRefineLevel(currentBlk, old_rflvl)
+                call Grid_getBlkRefineLevel(neghID(BLKNO), new_rflvl)
+              end if
+
+              if (neghID(PROCNO) /= currentProc) then
+                particles(ISCP_PART_PROP,i) = 1.0d0
+                is_crossproc = .true.
+              else if (old_rflvl /= new_rflvl) then
+                particles(ISCP_PART_PROP,i) = 1.0d0
+                is_crossproc = .true.
+              else
+                particles(BLK_PART_PROP, i) = neghID(BLKNO)
+                call Grid_getBlkType(neghID(BLKNO), blkType)
+
+                ! For checking the boundaries of the to-be new block
+                call Grid_getBlkBoundBox(neghID(BLKNO),new_bndBox)
+                call Grid_getDeltas(neghID(BLKNO),new_deltaCell)
+
+                ! Make sure the phi values are legal for the new_cellID 
+                if (gr_geometry == SPHERICAL) then
+                  call sanitize_phi_periodic_BCs(cellID, xcellID, currentBlk, &
+                                             bndBox, deltaCell, particles(:,i))
+                end if
+
+                ! Do the same check for Cartesian coordinate
+                call sanitize_cart_periodic_BCs(cellID, xcellID, currentBlk, &
+                                           bndBox, deltaCell, particles(:,i))
+
+                ! xcellID is updated to legal values also
+                call sanitize_xblock_cellID(cellID, xcellID)
+
+                ! The newPos here should be free of negative phi
+                newPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+                ! Update the new_cellID for new bndBox and deltas
+                call get_cellID(new_bndBox, new_deltaCell, newPos, new_cellID)
+
+                if ((new_cellID(1) == 4) .or. (new_cellID(2) == 4) .or. (new_cellID(3) == 4)) then
+                  print *, "pos_b4", pos_before_adv 
+                  print *, "pos_after", pos_after_adv 
+                  print *, "newPos", newPos
+                  print *, "cellID*", cellID
+                  print *, "xcellID*", xcellID
+                  print *, "wrongID*", new_cellID
+                end if
+              end if
+            end if
+
+            is_crossed = all((new_cellID == xcellID), 1)
+
+            !if (any(new_cellID > 12, 1) .or. any(new_cellID < 5, 1)) then
+            !  print *, "iscrossproc", is_crossproc
+            !  print *, "isoutside", isoutside
+            !  print *, "pos_b4", pos_before_adv 
+            !  print *, "pos_after", pos_after_adv 
+            !  print *, "currentPos", particles(POSX_PART_PROP:POSZ_PART_PROP, i)
+            !  print *, "wrongID", new_cellID
+            !  print *, "cellID", cellID
+            !  print *, "xcellID", xcellID
+            !end if
+
+            ! Quick debug messages
+            if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
+            !if ((.NOT. is_crossed) .and. (.not. is_crossproc)) then
+              print *, "prev_fate", prev_fate
+              print *, "pos_before_adv", pos_before_adv
+              print *, "pos_after_adv", pos_after_adv
+              print *, "Old cell", cellID
+              print *, "Target cell", xcellID
+              print *, "Current cell", new_cellID
+              print *, "outside?", isoutside
+              print *, "neghDir", neghDir
+              print *, "procID", neghID(PROCNO), currentProc, particles(PROC_PART_PROP, i)
+              print *, "blkID", neghID(BLKNO), currentBlk, particles(BLK_PART_PROP, i)
+            end if
+
+            particles(TREM_PART_PROP, i) = particles(TREM_PART_PROP, i)&
+                                         - min_time
+
+          case (pt_DDMC_STAY_ID)
+            ! still need to deposit energy to the host cell,
+            ! no mementum deposition needed because there is not leakage
+            call deposit_energy_ddmc(solnVec, cellID, v_gas, particles(:,i),&
+                                         mcp_fate, min_time, dtNew,&
+                                         fleck, k_a_cmf, k_s_cmf, dvol)
+            particles(TREM_PART_PROP, i) = -1
+
+#endif
         end select
       
         !currentPos = particles(POSX_PART_PROP:POSZ_PART_PROP, i)
@@ -917,6 +1258,11 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
         !print *, "nn_hat", i, nr_hat
         !print *, "=================="
         call Grid_releaseBlkPtr(currentBlk, solnVec)
+#ifdef FLASH_GREY_DDMC
+        call Grid_releaseBlkPtr(currentBlk, scratchVec)
+#endif
+
+        prev_fate = mcp_fate
 
       end do ! end of trem/iscp while loop for one MCP
 
@@ -995,6 +1341,17 @@ subroutine transport_mcps(dtOld, dtNew, particles, p_count, maxcount, ind)
   end do ! while loop for all particles are done
   deallocate(num_done_list)
 
+  ! post-process ddmc face-centered momentum deposition
+  ! such that DDM*_VAR values are of unit cm/s/s.
+  if (pt_is_ddmc) then
+    call Grid_getListOfBlocks(LEAF, blkList, numofblks)
+
+    do blk = 1, numofblks
+      call divide_by_face_area(blkList(blk))
+      call avg_face_flux_and_populate_arad(blkList(blk))
+    end do
+  end if
+
   if (pt_meshMe == 0) then
     print *, "RT Finished in", numpass, "subcycles."
     print *, "RT time step", dtNew
@@ -1026,10 +1383,12 @@ end subroutine transport_mcps
 
 
 subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
-                          fleck, k_ion, fleckp, N_H, N_H1, mcp_fate, xcellID,&
+                          k_leak, is_trap, fleck, k_ion, fleckp,&
+                          N_H, N_H1, mcp_fate, xcellID,&
                           min_time, min_dist, is_empty_cell_event)
   use Particles_data, only : pt_STAY_ID, pt_SCAT_ID, pt_ESCAT_ID,&
                              pt_ABS_ID, pt_CROSS_ID, pt_PION_ESCAT_ID,&
+                             pt_LEAK_ID, pt_DDMC_STAY_ID,&
                              pt_is_eff_scattering, pt_is_es_photoionization
   use Simulation_data, only : clight
   use random, only : rand
@@ -1043,6 +1402,8 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   real, dimension(NPART_PROPS), intent(in) :: particle
   integer, dimension(MDIM) :: cellID
   real, intent(in) :: k_a, k_s, fleck, k_ion, fleckp, N_H, N_H1
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: k_leak
+  logical, intent(in) :: is_trap
   integer, intent(out) :: mcp_fate
   integer, dimension(MDIM), intent(out) :: xcellID
   real, intent(out) :: min_time, min_dist
@@ -1096,6 +1457,9 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   ! Sample distances to scattering and absorption
   ! d_i = (d_stay, d_coll, d_boundary, d_absorption)
   call calc_distance_to_collision(k_s_sample, d_i(2))
+#ifdef FLASH_GREY_DDMC
+  if (is_trap) d_i(2) = huge(1.0) ! same-group scattering canceled out
+#endif
   !call calc_distance_to_absorption(k_a_sample, ini_weight, now_weight, d_i(4))
   call calc_distance_to_absorption_with_ionization(k_a_sample, N_H, N_H1,&
                                       ini_weight, now_weight, d_i(4),&
@@ -1108,11 +1472,9 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
     print *, "dist_abs.", d_i(4)
   end if
 
-
-
   ! distance to the closest cell boundary
-  call distance_to_closest_wall(bndBox, deltaCell, particle, cellID,& 
-                                xcellID, d_i(3))
+  call distance_to_closest_wall(bndBox, deltaCell, particle, cellID, k_leak,& 
+                                is_trap, xcellID, d_i(3))
 
   ! Determine the MCP's fate
   min_dist = minval(d_i, 1)
@@ -1122,6 +1484,9 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
   xi = 1.0
   if (min_id == 1) then
     mcp_fate = pt_STAY_ID
+    if (is_trap) then
+      mcp_fate = pt_DDMC_STAY_ID
+    end if
   else if (min_id == 2) then
     xi = rand()
 
@@ -1144,6 +1509,9 @@ subroutine determine_fate(bndBox, deltaCell, particle, cellID, k_a, k_s,&
     end if
   else if (min_id == 3) then ! Boundary crossing 
     mcp_fate = pt_CROSS_ID
+    if (is_trap) then
+      mcp_fate = pt_LEAK_ID
+    end if
   else if (min_id == 4) then
     mcp_fate = pt_ABS_ID ! Physical or effective absorption
     if (is_empty_cell) is_empty_cell_event = .true.
@@ -1241,14 +1609,16 @@ subroutine get_pos_offsets(bndBox, deltaCell, pos, cellID, h)
 end subroutine get_pos_offsets
 
 subroutine calc_distance_to_collision(k_opac, d_coll)
-
-  USE random, ONLY : randnozero
+  use Particles_data, only : pt_is_ddmc
+  use random, ONLY : randnozero
   implicit none
   real, intent(in)  :: k_opac
   real, intent(out) :: d_coll
 
   real :: xi
 
+  ! same-energy scattering canceled out
+  ! moved conditions to within determine_fate
   xi = randnozero()
   if (xi .eq. 1.0d0) xi = 0.9999999 ! since log(1) is zero
   if (xi .eq. 0.0d0) xi = 1.0d-10
@@ -1443,8 +1813,8 @@ subroutine advance_mcp(particle, dt)
       call get_spherical_position(cart_pos, sph_pos_new)
      
       !d_traveled = clight * dt
-      !r_new = sqrt(r_old*r_old + d_traveled*d_traveled +&
-      !             2.0d0*r_old*d_traveled*mu)
+      r_new = sqrt(r_old*r_old + d_traveled*d_traveled +&
+                   2.0d0*r_old*d_traveled*mu)
       !sph_pos_new(1) = r_new
       !print *, "advmcp-old", r_hat
       !print *, "n_hat", n_hat
@@ -1453,11 +1823,13 @@ subroutine advance_mcp(particle, dt)
         print *, "radiuscorr", pos(1), sph_pos_new(1)
         print *, "dt", dt
         print *, "vel", vel
+        print *, "tag", particle(TAG_PART_PROP)
+        print *, "fate", particle(FATE_PART_PROP)
         print *, "oldcart", old_cart_pos
         print *, "newcart", cart_pos
         print *, "rold, rnew", r_old, r_new
-        call Driver_abortFlash("advance_mcp:&
-                                MCP not advanced in sph. coord.!")
+        !call Driver_abortFlash("advance_mcp:&
+        !                        MCP not advanced in sph. coord.!")
       end if
       !print *, "advmcp-new", cart_pos / sqrt(dot_product(cart_pos, cart_pos))
 
@@ -1472,7 +1844,9 @@ end subroutine advance_mcp
 
 
 subroutine sanitize_boundary_mcp(cellID, xcellID,&
-                                 bndBox, deltaCell, particle)
+                                 bndBox, deltaCell,&
+                                 is_trap_negh, is_converted,&
+                                 particle)
   use Particles_data, only : pt_smlpush
   use Grid_interface, only : Grid_getBlkBC
   use Grid_data, only: gr_geometry
@@ -1485,6 +1859,7 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   integer, dimension(MDIM), intent(in) :: xcellID
   real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
   real, dimension(MDIM), intent(in) :: deltaCell
+  logical, intent(in) :: is_trap_negh, is_converted
   real, dimension(NPART_PROPS), intent(inout) :: particle
 
   ! aux variables
@@ -1503,6 +1878,14 @@ subroutine sanitize_boundary_mcp(cellID, xcellID,&
   call Grid_getBlkBC(currentBlk, faces, onBoundary)
 
   delta_cellID = xcellID - cellID
+
+  ! case of imc2ddmc returned
+  if ((.not. is_converted) .and. (is_trap_negh)) then
+    delta_cellID = -delta_cellID
+    ! so for +1 move, delta_cellID = -1, and vice versa.
+    ! negative push in the following
+    ! the phi periodic BC below is not active I think
+  end if
 
   ! Sanitizing
   ! If the MCP is moving up/down a cell, give it a little push
@@ -1614,7 +1997,7 @@ end subroutine sanitize_boundary_mcp_wrong
 
 ! Subroutine to apply the periodic boundary condition 
 ! in the phi direction
-subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
+subroutine sanitize_phi_periodic_BCs(cellID, xcellID, oldBlkID,&
                                  bndBox, deltaCell, particle)
   use Particles_data, only : pt_smlpush
   use Grid_interface, only : Grid_getBlkBC
@@ -1627,24 +2010,30 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
   ! Input/output
   integer, dimension(MDIM), intent(in) :: cellID
   integer, dimension(MDIM), intent(in) :: xcellID
+  integer, intent(in) :: oldBlkID
   real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
   real, dimension(MDIM), intent(in) :: deltaCell
   real, dimension(NPART_PROPS), intent(inout) :: particle
 
   ! aux variables
   real, dimension(MDIM) :: now_pos
+  real, dimension(MDIM) :: old_vel, new_vel
+  real :: delta_phi, rot_angle
   integer, dimension(MDIM) :: delta_cellID
-  integer :: currentBlk, ii
+  integer :: ii
   real:: zp
   integer, dimension(2,MDIM) :: faces, onBoundary
 
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
   now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
-  currentBlk = particle(BLK_PART_PROP)
+  old_vel = particle(VELX_PART_PROP:VELZ_PART_PROP)
+  new_vel = old_vel
+
+  delta_phi = sim_zMax - sim_zMin
 
   ! Check for periodic BC, for phi direction
-  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+  call Grid_getBlkBC(oldBlkID, faces, onBoundary)
 
   delta_cellID = xcellID - cellID
 
@@ -1661,6 +2050,7 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
           !end if
           if (now_pos(ii) > sim_zMax) then
             now_pos(ii) = now_pos(ii) - sim_zMax
+            call rotate_vel_by_angle(old_vel, delta_phi, new_vel)
           end if
           !zp = (now_pos(ii) - bndBox(LOW, KAXIS)) / deltaCell(KAXIS)
           !xcellID(ii) = floor(zp) + 1 + NGUARD
@@ -1678,6 +2068,7 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
           !end if
           if (now_pos(ii) < sim_zMin) then
             now_pos(ii) = now_pos(ii) + sim_zMax
+            call rotate_vel_by_angle(old_vel, -delta_phi, new_vel)
           end if
           !zp = (now_pos(ii) - bndBox(LOW, KAXIS)) / deltaCell(KAXIS)
           !xcellID(ii) = floor(zp) + 1 + NGUARD
@@ -1686,15 +2077,29 @@ subroutine sanitize_phi_periodic_BCs(cellID, xcellID,&
     end if
   end do
 
+  ! benny debugging
+  if ((now_pos(KAXIS) < 0.0) .or. (now_pos(KAXIS) > PI)) then
+    print*, "failed sanitization"
+    print *, "xcellID", xcellID
+    print*, "delta_cellID", delta_cellID
+    print *, "gr_geometry", gr_geometry, SPHERICAL
+    print *, "onBoundary?",  (onBoundary(LOW, KAXIS) == PERIODIC)
+    print *, "onBoundaryX",  onBoundary(:, IAXIS)
+    print *, "onBoundaryY",  onBoundary(:, JAXIS)
+    print *, "onBoundaryZ",  onBoundary(:, KAXIS)
+    print *, "zmin/zmax", sim_zMin, sim_zMax
+  end if
+
   ! Update to the shifted position
   particle(POSX_PART_PROP:POSZ_PART_PROP) = now_pos
+  particle(VELX_PART_PROP:VELZ_PART_PROP) = new_vel
 
 end subroutine sanitize_phi_periodic_BCs
 
 
 ! Subroutine to apply the periodic boundary condition 
 ! in all the xyz directions in Cartesian coordinate
-subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
+subroutine sanitize_cart_periodic_BCs(cellID, xcellID, oldBlkID,&
                                  bndBox, deltaCell, particle)
   use Particles_data, only : pt_smlpush
   use Grid_interface, only : Grid_getBlkBC
@@ -1709,6 +2114,7 @@ subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
   ! Input/output
   integer, dimension(MDIM), intent(in) :: cellID
   integer, dimension(MDIM), intent(in) :: xcellID
+  integer, intent(in) :: oldBlkID
   real, dimension(LOW:HIGH, MDIM), intent(in) :: bndBox
   real, dimension(MDIM), intent(in) :: deltaCell
   real, dimension(NPART_PROPS), intent(inout) :: particle
@@ -1716,7 +2122,7 @@ subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
   ! aux variables
   real, dimension(MDIM) :: now_pos
   integer, dimension(MDIM) :: delta_cellID
-  integer :: currentBlk, ii
+  integer :: ii
   real:: zp
   integer, dimension(2,MDIM) :: faces, onBoundary
   real, dimension(MDIM) :: domain_min, domain_max
@@ -1724,10 +2130,9 @@ subroutine sanitize_cart_periodic_BCs(cellID, xcellID,&
   ! Gathering particle information
   ! This now_pos should be near a cell boundary
   now_pos = particle(POSX_PART_PROP:POSZ_PART_PROP)
-  currentBlk = particle(BLK_PART_PROP)
 
   ! Check for periodic BC, for phi direction
-  call Grid_getBlkBC(currentBlk, faces, onBoundary)
+  call Grid_getBlkBC(oldBlkID, faces, onBoundary)
 
   delta_cellID = xcellID - cellID
 
@@ -2390,6 +2795,87 @@ subroutine calc_distance_to_phi_wall(bndBox, deltaCell,&
 
 end subroutine calc_distance_to_phi_wall
 
+! subroutine to sample distances to leakage events
+subroutine calc_distance_to_leakage(k_leak, d_leak, dir_leak)
+  use random, only : randnozero
+  implicit none
+
+#include "constants.h"
+#include "Flash.h"
+
+  ! Input/Output
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: k_leak
+  real, dimension(MDIM), intent(out) :: d_leak
+  integer, dimension(MDIM), intent(out) :: dir_leak
+
+  ! aux variables
+  real :: k_leak_tot, d_leak_tot
+  real :: k_leak_x, k_leak_y, k_leak_z
+  real :: p_x, p_y, xi, xi2
+  real :: p_L, p_R
+  integer :: leak_axis, leak_dir
+  real :: k_leak_L, k_leak_R
+
+  ! It should deal with all directions here.
+  k_leak_tot = sum(k_leak)  ! over all axes and direction
+
+  ! compute overall leakage distance
+  call calc_distance_to_collision(k_leak_tot, d_leak_tot)
+
+  ! gather axis-specific k_leak
+  k_leak_x = sum(k_leak(:, IAXIS))
+  k_leak_y = 0.0
+  k_leak_z = 0.0
+  if (NDIM >= 2) then
+    k_leak_y = sum(k_leak(:, JAXIS))
+
+    if (NDIM == 3) then
+      k_leak_z = sum(k_leak(:, KAXIS))
+    end if
+  end if
+
+  ! set default distance and direction array
+  d_leak = huge(1.0)
+  dir_leak = 0
+
+  ! determine leakage axis
+  ! initialization for 1D
+  p_x = k_leak_x / k_leak_tot
+  p_y = 0.0
+
+  if (NDIM >= 2) then
+    p_y = (k_leak_x + k_leak_y) / k_leak_tot
+  end if
+
+  ! sample leakage dimension
+  xi = randnozero()
+  leak_axis = 0 ! default to nothing
+  if (xi <= p_x) then
+    leak_axis = IAXIS
+  else if ((xi > p_x) .and. (xi <= p_y)) then
+    leak_axis = JAXIS
+  else ! z direction
+    leak_axis = KAXIS
+  end if
+
+  ! sample leakage direction
+  xi2 = randnozero()
+  leak_dir = 0 ! default to nothing
+
+  p_L = k_leak(1, leak_axis) / sum(k_leak(:, leak_axis))
+  p_R = 1.0 - p_L
+  if (xi2 <= p_L) then
+    leak_dir = -1
+  else
+    leak_dir = 1
+  end if
+
+  ! assign results to output arrays
+  d_leak(leak_axis) = d_leak_tot
+  dir_leak(leak_axis) = leak_dir
+
+end subroutine calc_distance_to_leakage
+
 
 subroutine quadratic(a_sys, b_sys, c_sys, soln)
 
@@ -2425,8 +2911,9 @@ end subroutine quadratic
 
 
 subroutine distance_to_closest_wall(bndBox, deltaCell,&
-                      particle, cellID, xcellID, min_dist, chk_stat)
-  use Particles_data, only : pt_smlpush
+                      particle, cellID, k_leak, is_trap, xcellID,&
+                      min_dist, chk_stat)
+  use Particles_data, only : pt_smlpush, pt_is_ddmc
   use Grid_data, only: gr_geometry
 
   implicit none
@@ -2439,6 +2926,10 @@ subroutine distance_to_closest_wall(bndBox, deltaCell,&
   real, dimension(MDIM), intent(in) :: deltaCell
   real, dimension(NPART_PROPS), intent(in) :: particle
   integer, dimension(MDIM), intent(in) :: cellID
+  ! ddmc
+  real, dimension(LOW:HIGH, MDIM), intent(in) :: k_leak
+  logical, intent(in) :: is_trap
+  !  
   integer, dimension(MDIM), intent(out) :: xcellID
   real, intent(out) :: min_dist
   logical, intent(in), optional :: chk_stat
@@ -2447,9 +2938,12 @@ subroutine distance_to_closest_wall(bndBox, deltaCell,&
   real, dimension(MDIM) :: distances
   integer, dimension(MDIM) :: dir
   integer :: xdim, xdir
+  integer :: leak_dim, leak_dir
 
   distances = huge(1.0d0) ! Initialize to huge distances
 
+  ! only use DDMC when turned on and active
+  if (.not. pt_is_ddmc .or. .not. is_trap) then
   if (gr_geometry == SPHERICAL) then
     ! Gather distances to walls
     call calc_distance_to_spherical_wall(bndBox, deltaCell,&
@@ -2474,6 +2968,19 @@ subroutine distance_to_closest_wall(bndBox, deltaCell,&
                                              particle, distances(KAXIS), dir(KAXIS))
       end if
     end if
+  end if
+
+  else
+  ! DDMC case
+    call calc_distance_to_leakage(k_leak, distances, dir)
+  !if (NDIM > 1) then
+  !  call calc_distance_to_leakage(k_leak(:,JAXIS), distances(JAXIS), dir(JAXIS))
+
+  !  if (NDIM == 3) then
+  !    call calc_distance_to_leakage(k_leak(:,KAXIS), distances(KAXIS), dir(KAXIS))
+  !  end if
+  !end if
+
   end if
 
   min_dist = minval(distances, 1)
@@ -2647,7 +3154,8 @@ subroutine deposit_energy_momentum(solnVec, cellID, v_gas, particle,&
 
     radflux = (mcp_energy / dvol) * (dl / (clight * dtNew))
     radflux_a = mcp_eps * old_weight * (1.0 - exp(-kappa_a*rho*dl))
-    radflux_s = mcp_eps * old_weight * (1.0 - exp(-kappa_s*rho*dl))
+    !radflux_s = mcp_eps * old_weight !* (1.0 - exp(-kappa_s*rho*dl))
+    radflux_s = mcp_eps * old_weight * (kappa_s*rho*dl)
     ! normalization to units of cm/s^2
     radflux_a = radflux_a / dvol / (dtNew * clight) / rho
     radflux_s = radflux_s / dvol / (dtNew * clight) / rho
@@ -2687,6 +3195,31 @@ subroutine deposit_energy_momentum(solnVec, cellID, v_gas, particle,&
   end if
 
 end subroutine deposit_energy_momentum
+
+
+! subroutine to rotate velocity vector by an angle for phi's 
+! periodic boundary conditions
+subroutine rotate_vel_by_angle(velold, angle, velnew)
+  use new_mcp, only : cross_product
+
+#include "constants.h"
+  implicit none
+  real, dimension(MDIM), intent(in) :: velold
+  real, intent(in) :: angle
+  real, dimension(MDIM), intent(out) :: velnew
+
+  ! aux variables
+  real, dimension(MDIM), parameter :: k_hat = (/ 0.0, 0.0, 1.0 /)
+  real, dimension(MDIM) :: vel_rot
+
+  ! Rodrigues' rotation formula
+  vel_rot = velold*cos(angle) + cross_product(k_hat, velold)*sin(angle)&
+            + k_hat*dot_product(k_hat, velold)*(1.0d0 - cos(angle))
+
+  velnew = vel_rot
+
+end subroutine rotate_vel_by_angle
+
 
 ! subroutine to compute weight vectors given positional offset.
 ! copied and simplified from pt_assignWeights
