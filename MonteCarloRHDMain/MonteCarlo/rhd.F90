@@ -49,7 +49,8 @@ subroutine apply_rad_source_terms(dt)
   use Particles_data, only : pt_is_thermally_coupled,&
                              pt_is_dynamically_coupled,&
                              pt_temp_floor, pt_is_apply_recombination,&
-                             pt_is_pi_heating, pt_marshak_eos
+                             pt_is_pi_heating, pt_marshak_eos,&
+                             pt_is_ddmc
   use Grid_interface, only : Grid_getBlkIndexLimits, Grid_getListOfBlocks,&
                              Grid_getBlkPtr, Grid_releaseBlkPtr
   use Grid_data, only : gr_geometry, gr_eosMode
@@ -195,14 +196,23 @@ subroutine apply_rad_source_terms(dt)
                                          solnVec(VELX_VAR:VELZ_VAR,i,j,k))
 
             dvxdt = (solnVec(ABMX_VAR,i,j,k) + solnVec(SCMX_VAR,i,j,k))
+#ifdef DDMX_VAR
+            if (pt_is_ddmc) dvxdt = dvxdt + solnVec(DDMX_VAR,i,j,k)
+#endif
             solnVec(VELX_VAR,i,j,k) = solnVec(VELX_VAR,i,j,k) + dvxdt * dt
 
             if (NDIM > 1) then
               dvydt = (solnVec(ABMY_VAR,i,j,k) + solnVec(SCMY_VAR,i,j,k))
+#ifdef DDMY_VAR
+              if (pt_is_ddmc) dvydt = dvydt + solnVec(DDMY_VAR,i,j,k)
+#endif
               solnVec(VELY_VAR,i,j,k) = solnVec(VELY_VAR,i,j,k) + dvydt * dt
 
               if (NDIM == 3) then
                 dvzdt = (solnVec(ABMZ_VAR,i,j,k) + solnVec(SCMZ_VAR,i,j,k))
+#ifdef DDMY_VAR
+                if (pt_is_ddmc) dvzdt = dvzdt + solnVec(DDMZ_VAR,i,j,k)
+#endif
                 solnVec(VELZ_VAR,i,j,k) = solnVec(VELZ_VAR,i,j,k) + dvzdt * dt
               end if
             end if
