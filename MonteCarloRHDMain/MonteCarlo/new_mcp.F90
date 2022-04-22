@@ -144,6 +144,7 @@ end subroutine sample_blk_position
 subroutine sample_iso_velocity(velvec)
   use Simulation_data, only : clight
   use random, only : rand
+  use Particles_data, only : pt_face_vel_mu_lim
   implicit none
 
 #include "constants.h"
@@ -161,6 +162,7 @@ subroutine sample_iso_velocity(velvec)
   velvec = 1.0d0
 
   mu = (2.0d0 * rand()) - 1.d0
+  mu = mu*pt_face_vel_mu_lim
 
   theta = ACOS(mu)
   sintheta = SIN(theta)
