@@ -121,6 +121,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_smlpush", pt_smlpush)
   call RuntimeParameters_get ("pt_is_grey", pt_is_grey)
   call RuntimeParameters_get ("pt_is_kt_opac", pt_is_kt_opac)
+  call RuntimeParameters_get ("pt_is_shadow_opac", pt_is_shadow_opac)
   call RuntimeParameters_get ("pt_is_eff_scattering", pt_is_eff_scattering)
   call RuntimeParameters_get ("pt_maxnewnum", pt_maxnewnum)
   call RuntimeParameters_get ("pt_max_rt_iterations", pt_max_rt_iterations)
@@ -129,6 +130,9 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_use_fromPos", pt_use_fromPos)
  
   call RuntimeParameters_get ("pt_initradfield_num", pt_initradfield_num)
+  call RuntimeParameters_get ("pt_initradfield_adapt_rf", pt_initradfield_adapt_rf)
+  call RuntimeParameters_get ("pt_initrad_use_Tgas", pt_initrad_use_Tgas)
+  call RuntimeParameters_get ("pt_initrad_Trad", pt_initrad_Trad)
 
   call RuntimeParameters_get ("pt_ThermalEmission", pt_ThermalEmission)
   call RuntimeParameters_get ("pt_marshak_eos", pt_marshak_eos)
@@ -158,6 +162,7 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_constFaceFlux", pt_constFaceFlux)
   call RuntimeParameters_get ("pt_is_therm_face_vel", pt_is_therm_face_vel)
   call RuntimeParameters_get ("pt_is_iso_face_vel", pt_is_iso_face_vel)
+  call RuntimeParameters_get ("pt_face_vel_mu_lim", pt_face_vel_mu_lim)
   call RuntimeParameters_get ("pt_is_radial_face_vel", pt_is_radial_face_vel)
   call RuntimeParameters_get ("pt_num_fmcps_tstep", pt_num_fmcps_tstep)
   call RuntimeParameters_get ("pt_num_fmcps_percell", pt_num_fmcps_percell)
@@ -215,6 +220,11 @@ subroutine Particles_init ( restart)
   call RuntimeParameters_get ("pt_interp_vel_LT", pt_interp_vel_LT)
   call RuntimeParameters_get ("pt_is_mcp_grey", pt_is_mcp_grey)
   call RuntimeParameters_get ("pt_samp_mode", pt_samp_mode)
+
+  ! parameter for DDMC implementation
+  call RuntimeParameters_get ("pt_is_ddmc", pt_is_ddmc)
+  call RuntimeParameters_get ("pt_ddmc_tau_thres", pt_ddmc_tau_thres)
+  
 
   ! Setting up the energy grid for non-grey RT
   if (pt_meshMe == 0) then

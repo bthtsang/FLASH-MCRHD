@@ -32,7 +32,8 @@ VARIABLE ABMZ TYPE: PER_MASS
 VARIABLE SCMX TYPE: PER_MASS
 VARIABLE SCMY TYPE: PER_MASS
 VARIABLE SCMZ TYPE: PER_MASS
-VARIABLE URAD TYPE: PER_MASS
+#VARIABLE NDEP TYPE: PER_MASS
+VARIABLE URAD TYPE: PER_VOLUME
 
 
 ### Runtime parameters for **both** ionizing and non-ionizing radiation
@@ -57,6 +58,15 @@ PARAMETER pt_smlpush         REAL 1.0e-10
 D pt_initradfield_num      Number of MCPs per cell as the initial radiation field
 PARAMETER pt_initradfield_num      INTEGER 0
 
+D pt_initradfield_adapt_rf  Whether to have the initiali number of MCPs refinement-aware
+PARAMETER pt_initradfield_adapt_rf    BOOLEAN FALSE
+
+D pt_initrad_use_Tgas      Whether to use Tgas to initialize radiation field
+PARAMETER pt_initrad_use_Tgas     BOOLEAN TRUE
+
+D pt_initrad_Trad          Constant Trad to use for initilizing radiation field
+PARAMETER pt_initrad_Trad          REAL 1.0e3
+
 D pt_ThermalEmission       Whether to turn on thermal emission
 PARAMETER pt_ThermalEmission BOOLEAN FALSE
 
@@ -74,6 +84,9 @@ PARAMETER pt_samp_mode   INTEGER 0
 
 D pt_is_kt_opac         Whether to use the \propto T^2 opacity law from KT12.
 PARAMETER pt_is_kt_opac BOOLEAN FALSE
+
+D pt_is_shadow_opac         Whether to use the \propto T^{-3.5} opacity law for the shadow test.
+PARAMETER pt_is_shadow_opac BOOLEAN FALSE
 
 D pt_single_line_opac        Whether to add a single line opacity
 PARAMETER pt_single_line_opac BOOLEAN FALSE
@@ -134,6 +147,9 @@ PARAMETER pt_is_therm_face_vel   BOOLEAN FALSE
 
 D pt_is_iso_face_vel    Whether to sample velocity vectors isotropically
 PARAMETER pt_is_iso_face_vel   BOOLEAN FALSE
+
+D pt_face_vel_mu_lim    Limits to mu for face emission velocity sampling
+PARAMETER pt_face_vel_mu_lim   REAL 1.0
 
 D pt_is_radial_face_vel    Whether to point velocities radially out
 PARAMETER pt_is_radial_face_vel   BOOLEAN  TRUE
@@ -271,3 +287,10 @@ PARAMETER pt_pi_avg_cooling           REAL  2.4
 
 D pt_is_cont_photo             Whether to continuously update tau for photoionization
 PARAMETER pt_is_cont_photo        BOOLEAN TRUE
+
+# DDMC parameters
+D pt_is_ddmc                   Whether to turn on DDMC for radiation transport
+PARAMETER pt_is_ddmc              BOOLEAN FALSE
+
+D pt_ddmc_tau_thres            Threshold to flag cells as DDMC-active
+PARAMETER pt_ddmc_tau_thres       REAL 5.0

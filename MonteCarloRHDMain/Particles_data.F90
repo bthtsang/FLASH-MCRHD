@@ -114,6 +114,7 @@ module Particles_data
   logical, save :: pt_use_fromPos
   logical, save :: pt_is_eff_scattering, pt_is_grey
   logical, save :: pt_is_kt_opac
+  logical, save :: pt_is_shadow_opac
   logical, save :: pt_single_line_opac
   integer, save    :: pt_maxnewnum, pt_max_rt_iterations
   real, save    :: pt_es_alpha
@@ -126,6 +127,8 @@ module Particles_data
   integer, parameter :: pt_PION_ESCAT_ID = 4
   integer, parameter :: pt_ABS_ID =   5
   integer, parameter :: pt_CROSS_ID = 6
+  integer, parameter :: pt_LEAK_ID = 7
+  integer, parameter :: pt_DDMC_STAY_ID = 8
 
   integer, parameter :: pt_quadrant_I =   1
   integer, parameter :: pt_quadrant_II =  2
@@ -138,6 +141,7 @@ module Particles_data
   real, save    :: pt_FacePlanckTemp, pt_constFaceFlux
   logical, save :: pt_is_therm_face_vel
   logical, save :: pt_is_iso_face_vel
+  real, save    :: pt_face_vel_mu_lim
   logical, save :: pt_is_radial_face_vel
   integer, save :: pt_num_fmcps_tstep
   integer, save :: pt_num_fmcps_percell 
@@ -152,6 +156,9 @@ module Particles_data
 
   ! use integer switch
   integer, save :: pt_initradfield_num
+  logical, save :: pt_initradfield_adapt_rf
+  logical, save :: pt_initrad_use_Tgas
+  real, save    :: pt_initrad_Trad
 
   logical, save :: pt_ThermalEmission
   logical, save :: pt_marshak_eos
@@ -202,5 +209,18 @@ module Particles_data
   integer, parameter :: pt_samp_uniform = 0
   integer, parameter :: pt_samp_Tgas =  1
   integer, parameter :: pt_samp_fixedT = 2
+
+  ! DDMC settings
+  logical, save    :: pt_is_ddmc
+  real, save       :: pt_ddmc_tau_thres
+  real, parameter  :: pt_ddmc_lambda = 0.7104
+
+  ! constant array to index next-face for flux averaging
+  integer, dimension(MDIM, MDIM), parameter :: face_negh = reshape(&
+                           (/ 1, 0, 0, 0, 1, 0, 0, 0, 1 /),&
+                           shape(face_negh) )
+  !face_negh(IAXIS) = (/ 1, 0, 0 /)
+  !face_negh(JAXIS) = (/ 0, 1, 0 /)
+  !face_negh(KAXIS) = (/ 0, 0, 1 /)
 
 end module Particles_data
