@@ -304,6 +304,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
 
   real :: Lambda_rec, Lambda_ff
   real :: avg_recomb_energy
+  real, dimension(MDIM) :: v_gas
 
   ! Initialization
   now_num = 0
@@ -332,6 +333,9 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
         ! Thermodynamical quantities
         rho  = solnVec(DENS_VAR, i, j, k)
         temp = solnVec(TEMP_VAR, i, j, k)
+
+        v_gas = solnVec(VELX_VAR:VELZ_VAR, cellID(IAXIS),&
+                         cellID(JAXIS), cellID(KAXIS))
 
         ! ionization states
         h1   = solnVec(H1_SPEC, i, j, k)
@@ -445,7 +449,7 @@ subroutine calc_recomb_emissivity(blkID, solnVec, dtNew,&
             ! Convert to lab frame if velocity dependent is on
             if (pt_is_veldp) then
               ! call some conversion function to convert
-              call transform_comoving_to_lab(cellID, solnVec,&
+              call transform_comoving_to_lab(v_gas, &!solnVec,&
                             dtNew, newparticle, dshift)
             end if
 
